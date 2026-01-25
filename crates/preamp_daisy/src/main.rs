@@ -14,7 +14,14 @@ use preamp::channel::Channel;
 use preamp::dsp::Process;
 use preamp::{ChannelMode, SAMPLE_RATE};
 
-static CHANNEL: Mutex<RefCell<Option<Channel>>> = Mutex::new(RefCell::new(None));
+/// Wrapper to allow static UnsafeCell (single-core MCU, so this is safe).
+struct SyncStorage(core::cell::UnsafeCell<core::mem::MaybeUninit<Channel>>);
+unsafe impl Sync for SyncStorage {}
+
+#[unsafe(link_section = ".sram")]
+static CHANNEL_STORAGE: SyncStorage =
+    SyncStorage(core::cell::UnsafeCell::new(core::mem::MaybeUninit::uninit()));
+static CHANNEL: Mutex<RefCell<Option<&'static mut Channel>>> = Mutex::new(RefCell::new(None));
 static AUDIO_INTERFACE: Mutex<RefCell<Option<audio::Interface>>> = Mutex::new(RefCell::new(None));
 
 #[entry]
@@ -29,10 +36,18 @@ fn main() -> ! {
     let ccdr = daisy::board_freeze_clocks!(board, dp);
     let pins = daisy::board_split_gpios!(board, ccdr, dp);
     let mut led_user = daisy::board_split_leds!(pins).USER;
+
+    // Turn on LED immediately to confirm we got this far.
+    led_user.set_high();
+
     let audio_interface = daisy::board_split_audio!(ccdr, pins);
 
     // Set up the DSP channel in Guitar mode with cab sim.
-    let mut channel = Channel::new(SAMPLE_RATE);
+    // Place in SRAM to avoid flash size limits.
+    let channel = unsafe {
+        let ptr = CHANNEL_STORAGE.0.get();
+        (*ptr).write(Channel::new(SAMPLE_RATE))
+    };
     channel.set_mode(ChannelMode::Guitar);
 
     // Load the first available IR.

@@ -18,7 +18,9 @@ pub fn embed_ir(input: TokenStream) -> TokenStream {
     let input_str = input.to_string();
     let parts: Vec<&str> = input_str.split(',').collect();
 
-    let path_str = parts[0].trim().trim_matches('"');
+    let path_str = parts[0]
+        .trim()
+        .trim_matches(|c| c == '"' || c == '"' || c == '"');
     let max_length: Option<usize> = parts
         .get(1)
         .map(|s| s.trim().parse().expect("Second argument must be a number"));
