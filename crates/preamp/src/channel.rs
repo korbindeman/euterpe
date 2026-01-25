@@ -48,6 +48,9 @@ impl Channel {
         let mut cab_sim = CabSim::new();
         cab_sim.params_mut().enabled.set(true); // Guitar mode default: cab sim on
 
+        let mut saturator = Saturator::with_sample_rate(sample_rate);
+        saturator.params_mut().enabled.set(false); // Guitar mode default: saturator off
+
         Self {
             mode: ChannelMode::Guitar,
             params: ChannelParams::new(sample_rate),
@@ -61,7 +64,7 @@ impl Channel {
                 EQ_MID_Q,
                 sr,
             ),
-            saturator: Saturator::with_sample_rate(sample_rate),
+            saturator,
             cab_sim,
             limiter: Limiter::new(sample_rate),
         }

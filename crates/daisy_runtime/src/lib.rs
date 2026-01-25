@@ -5,6 +5,8 @@
 
 #![no_std]
 
+pub mod controls;
+
 // Re-export dependencies for convenience
 pub use cortex_m;
 pub use cortex_m_rt;
