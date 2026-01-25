@@ -8,6 +8,8 @@ const BLOCK_SIZE: usize = 256;
 const FFT_SIZE: usize = 512;
 /// Number of IR partitions for 2048-sample IR support.
 const NUM_PARTITIONS: usize = 8;
+/// Maximum IR length supported (NUM_PARTITIONS × BLOCK_SIZE).
+pub const IR_MAX_LENGTH: usize = NUM_PARTITIONS * BLOCK_SIZE;
 
 pub struct CabSimParams {
     pub enabled: Toggle,
@@ -21,7 +23,7 @@ impl CabSimParams {
     }
 }
 
-pub struct CabSim<const N: usize> {
+pub struct CabSim {
     params: CabSimParams,
     /// Input buffer (accumulate samples until block is ready)
     input_buffer: [f32; BLOCK_SIZE],
@@ -40,7 +42,7 @@ pub struct CabSim<const N: usize> {
     ir_loaded: bool,
 }
 
-impl<const N: usize> CabSim<N> {
+impl CabSim {
     pub fn new() -> Self {
         Self {
             params: CabSimParams::new(false),
@@ -112,7 +114,7 @@ impl<const N: usize> CabSim<N> {
         self.output_buffer = [0.0; BLOCK_SIZE];
         self.output_pos = 0;
 
-        self.ir_loaded = ir.len() > 0;
+        self.ir_loaded = !ir.is_empty();
     }
 
     /// Process a full block using partitioned overlap-add convolution.
@@ -170,13 +172,13 @@ impl<const N: usize> CabSim<N> {
     }
 }
 
-impl<const N: usize> Process for CabSim<N> {
+impl Process for CabSim {
     fn process(&mut self, sample: f32) -> f32 {
         // Clear dirty flag
         let _ = self.params.enabled.take_dirty();
 
-        // Bypass if disabled or no IR loaded, or if N <= 1 (minimal/disabled config)
-        if !self.params.enabled.get() || !self.ir_loaded || N <= 1 {
+        // Bypass if disabled or no IR loaded
+        if !self.params.enabled.get() || !self.ir_loaded {
             return sample;
         }
 

@@ -31,18 +31,18 @@ impl Default for ChannelParams {
     }
 }
 
-pub struct Channel<const IR_LEN: usize> {
+pub struct Channel {
     mode: ChannelMode,
     params: ChannelParams,
     gate: NoiseGate,
     compressor: Compressor,
     eq: ThreeBandEq,
     saturator: Saturator,
-    cab_sim: CabSim<IR_LEN>,
+    cab_sim: CabSim,
     limiter: Limiter,
 }
 
-impl<const IR_LEN: usize> Channel<IR_LEN> {
+impl Channel {
     pub fn new(sample_rate: u32) -> Self {
         let sr = sample_rate as f32;
         let mut cab_sim = CabSim::new();
@@ -162,7 +162,7 @@ impl<const IR_LEN: usize> Channel<IR_LEN> {
     }
 }
 
-impl<const IR_LEN: usize> Process for Channel<IR_LEN> {
+impl Process for Channel {
     #[inline]
     fn process(&mut self, sample: f32) -> f32 {
         // Signal flow: Input -> Gate -> Compressor -> EQ -> Saturator -> Cab Sim -> Gain -> Limiter -> Output

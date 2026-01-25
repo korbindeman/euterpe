@@ -2,9 +2,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use desktop_audio::AudioProcessor;
+use preamp::SAMPLE_RATE;
 use preamp::channel::Channel;
 use preamp::dsp::Process;
-use preamp::{IR_MAX_LENGTH, SAMPLE_RATE};
 
 /// Pending IR to be loaded into a channel.
 /// The UI thread sets this, and the audio thread takes it.
@@ -20,8 +20,8 @@ impl Default for PendingIr {
 
 /// Shared state between UI and audio threads.
 pub struct SharedState {
-    pub ch1: Mutex<Channel<IR_MAX_LENGTH>>,
-    pub ch2: Mutex<Channel<IR_MAX_LENGTH>>,
+    pub ch1: Mutex<Channel>,
+    pub ch2: Mutex<Channel>,
     pub mono_mode: AtomicBool,
     // Pending IRs are separate so the UI can set them without locking the channel
     pub ch1_pending_ir: Mutex<PendingIr>,

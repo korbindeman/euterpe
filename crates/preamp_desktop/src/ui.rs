@@ -7,6 +7,7 @@ use desktop_audio::{
     load_ir,
 };
 use preamp::ChannelMode;
+use preamp::dsp::cab_sim::IR_MAX_LENGTH;
 
 use crate::state::{PreampProcessor, SharedState};
 
@@ -54,7 +55,7 @@ impl PreampApp {
         if let Ok(ir) = load_ir(
             Path::new(DEFAULT_GUITAR_IR),
             preamp::SAMPLE_RATE,
-            preamp::IR_MAX_LENGTH,
+            IR_MAX_LENGTH,
         ) {
             ch1_ir_filename = "deluxe_reverb.wav".to_string();
             ch2_ir_filename = "deluxe_reverb.wav".to_string();
@@ -188,7 +189,7 @@ impl PreampApp {
                                 match desktop_audio::load_ir(
                                     &path,
                                     preamp::SAMPLE_RATE,
-                                    preamp::IR_MAX_LENGTH,
+                                    IR_MAX_LENGTH,
                                 ) {
                                     Ok(ir) => {
                                         let filename = path

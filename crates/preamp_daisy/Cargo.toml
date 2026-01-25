@@ -6,3 +6,4 @@ edition.workspace = true
 [dependencies]
 preamp = { path = "../preamp" }
 daisy_runtime = { path = "../daisy_runtime" }
+ir_embed = { path = "../ir_embed" }

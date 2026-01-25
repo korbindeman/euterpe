@@ -1,6 +1,8 @@
 #![no_main]
 #![no_std]
 
+mod ir;
+
 use core::cell::RefCell;
 
 use daisy_runtime::cortex_m::{self, asm, interrupt::Mutex};
@@ -12,8 +14,7 @@ use preamp::channel::Channel;
 use preamp::dsp::Process;
 use preamp::{ChannelMode, SAMPLE_RATE};
 
-// Channel with IR_LEN=1 since cab sim is disabled (DI mode).
-static CHANNEL: Mutex<RefCell<Option<Channel<1>>>> = Mutex::new(RefCell::new(None));
+static CHANNEL: Mutex<RefCell<Option<Channel>>> = Mutex::new(RefCell::new(None));
 static AUDIO_INTERFACE: Mutex<RefCell<Option<audio::Interface>>> = Mutex::new(RefCell::new(None));
 
 #[entry]
@@ -30,9 +31,14 @@ fn main() -> ! {
     let mut led_user = daisy::board_split_leds!(pins).USER;
     let audio_interface = daisy::board_split_audio!(ccdr, pins);
 
-    // Set up the DSP channel in Bass/DI mode (no cab sim).
-    let mut channel = Channel::<1>::new(SAMPLE_RATE);
-    channel.set_mode(ChannelMode::Bass);
+    // Set up the DSP channel in Guitar mode with cab sim.
+    let mut channel = Channel::new(SAMPLE_RATE);
+    channel.set_mode(ChannelMode::Guitar);
+
+    // Load the first available IR.
+    if let Some(ir_data) = ir::get_ir(0) {
+        channel.set_ir(ir_data);
+    }
 
     // Store globals.
     cortex_m::interrupt::free(|cs| {

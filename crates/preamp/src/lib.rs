@@ -20,7 +20,6 @@ pub enum ChannelMode {
 // ---------------------------------------------------------------------------
 
 pub const SAMPLE_RATE: u32 = 48_000;
-pub const IR_MAX_LENGTH: usize = 2048;
 
 // Compressor — preamp-specific attack times per mode
 pub const COMP_ATTACK_GUITAR_MS: f32 = 15.0;

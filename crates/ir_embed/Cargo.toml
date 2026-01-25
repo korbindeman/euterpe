@@ -1,0 +1,10 @@
+[package]
+name = "ir_embed"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+hound = "3.5"
