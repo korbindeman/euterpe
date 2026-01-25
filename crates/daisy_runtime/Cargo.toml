@@ -1,0 +1,12 @@
+[package]
+name = "daisy_runtime"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+daisy = { version = "0.11.0", features = ["seed_1_2"] }
+cortex-m = "0.7"
+cortex-m-rt = { version = "0.7", features = ["device"] }
+stm32h7xx-hal = { version = "0.16", features = ["stm32h750v", "rt", "revision_v", "usb_hs", "xspi", "fmc"] }
+stm32-fmc = "0.3"
+panic-halt = "0.2.0"

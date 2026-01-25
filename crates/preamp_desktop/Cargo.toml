@@ -1,0 +1,10 @@
+[package]
+name = "preamp_desktop"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+preamp = { path = "../preamp" }
+desktop_audio = { path = "../desktop_audio", features = ["egui"] }
+eframe = "0.31"
+rfd = "0.15"

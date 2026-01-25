@@ -1,0 +1,16 @@
+[package]
+name = "desktop_audio"
+version.workspace = true
+edition.workspace = true
+
+[features]
+default = []
+egui = ["dep:egui", "dep:dsp"]
+
+[dependencies]
+cpal = "0.15"
+hound = "3.5"
+rubato = "0.15"
+rtrb = "0.3"
+egui = { version = "0.31", optional = true, default-features = false }
+dsp = { path = "../dsp", optional = true }

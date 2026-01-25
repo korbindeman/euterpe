@@ -1,0 +1,27 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/dsp",
+    "crates/desktop_audio",
+    "crates/daisy_runtime",
+    "crates/preamp",
+    "crates/preamp_desktop",
+    "crates/preamp_daisy",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+# Optimize for real-time audio in dev builds.
+[profile.dev.package.dsp]
+opt-level = 3
+
+[profile.dev.package.micromath]
+opt-level = 3
+
+[profile.dev.package.preamp]
+opt-level = 3
+
+[profile.dev.package.preamp_desktop]
+opt-level = 2

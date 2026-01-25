@@ -1,0 +1,7 @@
+[package]
+name = "dsp"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+micromath = "2.1"

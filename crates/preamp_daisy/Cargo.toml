@@ -1,0 +1,8 @@
+[package]
+name = "preamp_daisy"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+preamp = { path = "../preamp" }
+daisy_runtime = { path = "../daisy_runtime" }

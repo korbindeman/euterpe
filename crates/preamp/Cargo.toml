@@ -1,0 +1,7 @@
+[package]
+name = "preamp"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+dsp = { path = "../dsp" }
