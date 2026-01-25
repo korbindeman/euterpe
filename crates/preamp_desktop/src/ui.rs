@@ -160,10 +160,20 @@ impl PreampApp {
                     channel.saturator_params_mut().enabled.ui(ui);
                     channel.saturator_params_mut().drive.ui(ui);
 
-                    // Cab Sim
-                    ui.separator();
-                    ui.heading("Cab Sim");
-                    channel.cab_sim_params_mut().enabled.ui(ui);
+                    // Cab Sim (guitar mode only)
+                    let is_guitar = channel.mode() == ChannelMode::Guitar;
+                    let mut browse_clicked = false;
+                    if is_guitar {
+                        ui.separator();
+                        ui.heading("Cab Sim");
+                        channel.cab_sim_params_mut().enabled.ui(ui);
+
+                        ui.label("Load Cabinet IR");
+                        browse_clicked = ui.button("Browse...").clicked();
+                        if !browse_clicked && !ir_filename.is_empty() {
+                            ui.label(ir_filename.as_str());
+                        }
+                    }
 
                     // Limiter
                     ui.separator();
@@ -172,49 +182,36 @@ impl PreampApp {
                     channel.limiter_params_mut().threshold.ui(ui);
                     channel.limiter_params_mut().release.ui(ui);
 
-                    ui.add_space(4.0);
-
-                    // IR loader (guitar mode only, cab sim is auto-enabled)
-                    let is_guitar = channel.mode() == ChannelMode::Guitar;
-                    if is_guitar {
-                        ui.separator();
-                        ui.label("Load Cabinet IR");
-                        if ui.button("Browse...").clicked() {
-                            // Release lock before opening file dialog
-                            drop(channel);
-                            if let Some(path) = rfd::FileDialog::new()
-                                .add_filter("WAV", &["wav"])
-                                .pick_file()
+                    // Handle IR file dialog after releasing the channel lock
+                    drop(channel);
+                    if browse_clicked {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("WAV", &["wav"])
+                            .pick_file()
+                        {
+                            match desktop_audio::load_ir(&path, preamp::SAMPLE_RATE, IR_MAX_LENGTH)
                             {
-                                match desktop_audio::load_ir(
-                                    &path,
-                                    preamp::SAMPLE_RATE,
-                                    IR_MAX_LENGTH,
-                                ) {
-                                    Ok(ir) => {
-                                        let filename = path
-                                            .file_name()
-                                            .map(|n| n.to_string_lossy().into_owned())
-                                            .unwrap_or_default();
-                                        *ir_filename = filename;
+                                Ok(ir) => {
+                                    let filename = path
+                                        .file_name()
+                                        .map(|n| n.to_string_lossy().into_owned())
+                                        .unwrap_or_default();
+                                    *ir_filename = filename;
 
-                                        // Store IR in pending slot for audio thread to pick up
-                                        let pending = if channel_index == 0 {
-                                            &self.state.ch1_pending_ir
-                                        } else {
-                                            &self.state.ch2_pending_ir
-                                        };
-                                        if let Ok(mut p) = pending.lock() {
-                                            p.ir = Some(ir);
-                                        }
-                                    }
-                                    Err(e) => {
-                                        *ir_filename = format!("Error: {e}");
+                                    // Store IR in pending slot for audio thread to pick up
+                                    let pending = if channel_index == 0 {
+                                        &self.state.ch1_pending_ir
+                                    } else {
+                                        &self.state.ch2_pending_ir
+                                    };
+                                    if let Ok(mut p) = pending.lock() {
+                                        p.ir = Some(ir);
                                     }
                                 }
+                                Err(e) => {
+                                    *ir_filename = format!("Error: {e}");
+                                }
                             }
-                        } else if !ir_filename.is_empty() {
-                            ui.label(ir_filename.as_str());
                         }
                     }
                 } else {

@@ -143,12 +143,14 @@ impl Channel {
                     .attack
                     .set(COMP_ATTACK_GUITAR_MS);
                 self.cab_sim_params_mut().enabled.set(true);
+                self.saturator_params_mut().enabled.set(false);
             }
             ChannelMode::Bass => {
                 self.eq
                     .reconfigure(EQ_LOW_FREQ_BASS, EQ_MID_FREQ_BASS, EQ_HIGH_FREQ_BASS, sr);
                 self.compressor_params_mut().attack.set(COMP_ATTACK_BASS_MS);
                 self.cab_sim_params_mut().enabled.set(false);
+                self.saturator_params_mut().enabled.set(true);
             }
         }
     }
