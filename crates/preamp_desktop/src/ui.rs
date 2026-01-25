@@ -164,6 +164,13 @@ impl PreampApp {
                     ui.heading("Cab Sim");
                     channel.cab_sim_params_mut().enabled.ui(ui);
 
+                    // Limiter
+                    ui.separator();
+                    ui.heading("Limiter");
+                    channel.limiter_params_mut().enabled.ui(ui);
+                    channel.limiter_params_mut().threshold.ui(ui);
+                    channel.limiter_params_mut().release.ui(ui);
+
                     ui.add_space(4.0);
 
                     // IR loader (guitar mode only, cab sim is auto-enabled)
@@ -273,27 +280,29 @@ impl eframe::App for PreampApp {
 
         // Channel strips and global controls
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                self.channel_strip(ui, 0);
-                ui.add_space(8.0);
-                self.channel_strip(ui, 1);
-                ui.add_space(16.0);
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    self.channel_strip(ui, 0);
+                    ui.add_space(8.0);
+                    self.channel_strip(ui, 1);
+                    ui.add_space(16.0);
 
-                // Global controls
-                ui.vertical(|ui| {
-                    ui.heading("Global");
-                    ui.add_space(4.0);
+                    // Global controls
+                    ui.vertical(|ui| {
+                        ui.heading("Global");
+                        ui.add_space(4.0);
 
-                    let mut mono = self
-                        .state
-                        .mono_mode
-                        .load(std::sync::atomic::Ordering::Relaxed);
-                    let label = if mono { "Mono" } else { "Stereo" };
-                    if toggle_button(ui, label, &mut mono) {
-                        self.state
+                        let mut mono = self
+                            .state
                             .mono_mode
-                            .store(mono, std::sync::atomic::Ordering::Relaxed);
-                    }
+                            .load(std::sync::atomic::Ordering::Relaxed);
+                        let label = if mono { "Mono" } else { "Stereo" };
+                        if toggle_button(ui, label, &mut mono) {
+                            self.state
+                                .mono_mode
+                                .store(mono, std::sync::atomic::Ordering::Relaxed);
+                        }
+                    });
                 });
             });
         });

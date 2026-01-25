@@ -7,6 +7,7 @@ pub mod cab_sim;
 pub mod compressor;
 pub mod eq;
 pub mod gate;
+pub mod limiter;
 pub mod params;
 pub mod saturator;
 

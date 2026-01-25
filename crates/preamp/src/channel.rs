@@ -3,6 +3,7 @@ use dsp::cab_sim::{CabSim, CabSimParams};
 use dsp::compressor::{Compressor, CompressorParams};
 use dsp::eq::{ThreeBandEq, ThreeBandEqParams};
 use dsp::gate::{NoiseGate, NoiseGateParams};
+use dsp::limiter::{Limiter, LimiterParams};
 use dsp::params::Knob;
 use dsp::saturator::{Saturator, SaturatorParams};
 
@@ -38,6 +39,7 @@ pub struct Channel<const IR_LEN: usize> {
     eq: ThreeBandEq,
     saturator: Saturator,
     cab_sim: CabSim<IR_LEN>,
+    limiter: Limiter,
 }
 
 impl<const IR_LEN: usize> Channel<IR_LEN> {
@@ -61,6 +63,7 @@ impl<const IR_LEN: usize> Channel<IR_LEN> {
             ),
             saturator: Saturator::with_sample_rate(sample_rate),
             cab_sim,
+            limiter: Limiter::new(sample_rate),
         }
     }
 
@@ -114,6 +117,14 @@ impl<const IR_LEN: usize> Channel<IR_LEN> {
         self.cab_sim.params_mut()
     }
 
+    pub fn limiter_params(&self) -> &LimiterParams {
+        self.limiter.params()
+    }
+
+    pub fn limiter_params_mut(&mut self) -> &mut LimiterParams {
+        self.limiter.params_mut()
+    }
+
     pub fn set_mode(&mut self, mode: ChannelMode) {
         if self.mode == mode {
             return;
@@ -154,12 +165,13 @@ impl<const IR_LEN: usize> Channel<IR_LEN> {
 impl<const IR_LEN: usize> Process for Channel<IR_LEN> {
     #[inline]
     fn process(&mut self, sample: f32) -> f32 {
-        // Signal flow: Input -> Gate -> Compressor -> EQ -> Saturator -> Cab Sim -> Gain -> Output
+        // Signal flow: Input -> Gate -> Compressor -> EQ -> Saturator -> Cab Sim -> Gain -> Limiter -> Output
         let s = self.gate.process(sample);
         let s = self.compressor.process(s);
         let s = self.eq.process(s);
         let s = self.saturator.process(s);
         let s = self.cab_sim.process(s);
-        s * self.params.gain.get_smoothed()
+        let s = s * self.params.gain.get_smoothed();
+        self.limiter.process(s)
     }
 }

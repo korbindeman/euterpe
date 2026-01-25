@@ -5,3 +5,4 @@ edition.workspace = true
 
 [dependencies]
 micromath = "2.1"
+microfft = { version = "0.6", default-features = false, features = ["size-512"] }
