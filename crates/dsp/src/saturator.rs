@@ -1,24 +1,11 @@
-#[allow(unused_imports)]
-use micromath::F32Ext;
-
 use crate::Process;
 use crate::params::{Knob, Toggle};
+use crate::utils::{db_to_linear, tanhf};
 
 /// Default saturator drive in dB.
 pub const DEFAULT_DRIVE_DB: f32 = 12.0;
 /// Default sample rate for smoother initialization.
 const DEFAULT_SAMPLE_RATE: u32 = 48000;
-
-/// Compute tanh(x) using micromath's exp.
-/// tanh(x) = (e^(2x) - 1) / (e^(2x) + 1)
-fn tanhf(x: f32) -> f32 {
-    let e2x = (2.0 * x).exp();
-    (e2x - 1.0) / (e2x + 1.0)
-}
-
-fn db_to_linear(db: f32) -> f32 {
-    10.0f32.powf(db / 20.0)
-}
 
 pub struct SaturatorParams {
     pub enabled: Toggle,

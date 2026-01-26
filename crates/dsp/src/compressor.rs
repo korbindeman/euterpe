@@ -1,8 +1,6 @@
-#[allow(unused_imports)]
-use micromath::F32Ext;
-
 use crate::Process;
 use crate::params::{Knob, Toggle};
+use crate::utils::{db_to_linear, linear_to_db, time_constant};
 
 /// Default compressor settings.
 pub const DEFAULT_THRESHOLD_DB: f32 = -20.0;
@@ -46,24 +44,6 @@ pub struct Compressor {
     release_coeff: f32,
     threshold_linear: f32,
     knee_width: f32, // in dB, for soft knee
-}
-
-/// Convert milliseconds to an envelope follower coefficient.
-/// coeff = exp(-1.0 / (time_seconds * sample_rate))
-fn time_constant(ms: f32, sample_rate: u32) -> f32 {
-    (-1.0 / (ms * 0.001 * sample_rate as f32)).exp()
-}
-
-/// Convert a dB value to linear amplitude.
-fn db_to_linear(db: f32) -> f32 {
-    10.0f32.powf(db / 20.0)
-}
-
-/// Convert a linear amplitude to dB.  Clamps to a floor to avoid log(0).
-fn linear_to_db(lin: f32) -> f32 {
-    const FLOOR: f32 = 1e-12;
-    let clamped = if lin < FLOOR { FLOOR } else { lin };
-    20.0 * clamped.log10()
 }
 
 impl Compressor {

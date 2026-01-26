@@ -1,8 +1,6 @@
-#[allow(unused_imports)]
-use micromath::F32Ext;
-
 use crate::Process;
 use crate::params::{Knob, Toggle};
+use crate::utils::{db_to_linear, time_constant};
 
 /// Default noise gate settings.
 pub const DEFAULT_THRESHOLD_DB: f32 = -70.0;
@@ -49,14 +47,6 @@ pub struct NoiseGate {
     hysteresis_linear: f32,
     /// Gate state (true = open, false = closed)
     is_open: bool,
-}
-
-fn time_constant(ms: f32, sample_rate: u32) -> f32 {
-    (-1.0 / (ms * 0.001 * sample_rate as f32)).exp()
-}
-
-fn db_to_linear(db: f32) -> f32 {
-    10.0f32.powf(db / 20.0)
 }
 
 impl NoiseGate {

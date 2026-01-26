@@ -1,5 +1,7 @@
 use dsp::Process;
 use dsp::cab_sim::{CabSim, CabSimParams};
+use dsp::comp_163::{Comp163, Comp163Params};
+use dsp::comp_1176::{Comp1176, Comp1176Params};
 use dsp::compressor::{Compressor, CompressorParams};
 use dsp::eq::{ThreeBandEq, ThreeBandEqParams};
 use dsp::gate::{NoiseGate, NoiseGateParams};
@@ -8,9 +10,9 @@ use dsp::params::Knob;
 use dsp::saturator::{Saturator, SaturatorParams};
 
 use crate::{
-    COMP_ATTACK_BASS_MS, COMP_ATTACK_GUITAR_MS, ChannelMode, EQ_BOOST_DB, EQ_HIGH_FREQ_BASS,
-    EQ_HIGH_FREQ_GUITAR, EQ_LOW_FREQ_BASS, EQ_LOW_FREQ_GUITAR, EQ_MID_FREQ_BASS,
-    EQ_MID_FREQ_GUITAR, EQ_MID_Q, GAIN_MAX, GAIN_MIN, SAMPLE_RATE,
+    ChannelMode, CompressorType, EQ_BOOST_DB, EQ_HIGH_FREQ_BASS, EQ_HIGH_FREQ_GUITAR,
+    EQ_LOW_FREQ_BASS, EQ_LOW_FREQ_GUITAR, EQ_MID_FREQ_BASS, EQ_MID_FREQ_GUITAR, EQ_MID_Q, GAIN_MAX,
+    GAIN_MIN, SAMPLE_RATE,
 };
 
 pub struct ChannelParams {
@@ -35,7 +37,11 @@ pub struct Channel {
     mode: ChannelMode,
     params: ChannelParams,
     gate: NoiseGate,
-    compressor: Compressor,
+    // Compressors - only one is active at a time
+    compressor_type: CompressorType,
+    compressor_standard: Compressor,
+    compressor_1176: Comp1176,
+    compressor_163: Comp163,
     eq: ThreeBandEq,
     saturator: Saturator,
     cab_sim: CabSim,
@@ -55,7 +61,10 @@ impl Channel {
             mode: ChannelMode::Guitar,
             params: ChannelParams::new(sample_rate),
             gate: NoiseGate::new(sample_rate),
-            compressor: Compressor::new(sample_rate),
+            compressor_type: CompressorType::default(),
+            compressor_standard: Compressor::new(sample_rate),
+            compressor_1176: Comp1176::new(sample_rate),
+            compressor_163: Comp163::new(sample_rate),
             eq: ThreeBandEq::new(
                 EQ_LOW_FREQ_GUITAR,
                 EQ_MID_FREQ_GUITAR,
@@ -88,12 +97,40 @@ impl Channel {
         self.gate.params_mut()
     }
 
-    pub fn compressor_params(&self) -> &CompressorParams {
-        self.compressor.params()
+    // Compressor type selection
+    pub fn compressor_type(&self) -> CompressorType {
+        self.compressor_type
     }
 
-    pub fn compressor_params_mut(&mut self) -> &mut CompressorParams {
-        self.compressor.params_mut()
+    pub fn set_compressor_type(&mut self, comp_type: CompressorType) {
+        self.compressor_type = comp_type;
+    }
+
+    // Standard compressor params
+    pub fn compressor_standard_params(&self) -> &CompressorParams {
+        self.compressor_standard.params()
+    }
+
+    pub fn compressor_standard_params_mut(&mut self) -> &mut CompressorParams {
+        self.compressor_standard.params_mut()
+    }
+
+    // 1176 compressor params
+    pub fn compressor_1176_params(&self) -> &Comp1176Params {
+        self.compressor_1176.params()
+    }
+
+    pub fn compressor_1176_params_mut(&mut self) -> &mut Comp1176Params {
+        self.compressor_1176.params_mut()
+    }
+
+    // 163 compressor params
+    pub fn compressor_163_params(&self) -> &Comp163Params {
+        self.compressor_163.params()
+    }
+
+    pub fn compressor_163_params_mut(&mut self) -> &mut Comp163Params {
+        self.compressor_163.params_mut()
     }
 
     pub fn eq_params(&self) -> &ThreeBandEqParams {
@@ -142,16 +179,12 @@ impl Channel {
                     EQ_HIGH_FREQ_GUITAR,
                     sr,
                 );
-                self.compressor_params_mut()
-                    .attack
-                    .set(COMP_ATTACK_GUITAR_MS);
                 self.cab_sim_params_mut().enabled.set(true);
                 self.saturator_params_mut().enabled.set(false);
             }
             ChannelMode::Bass => {
                 self.eq
                     .reconfigure(EQ_LOW_FREQ_BASS, EQ_MID_FREQ_BASS, EQ_HIGH_FREQ_BASS, sr);
-                self.compressor_params_mut().attack.set(COMP_ATTACK_BASS_MS);
                 self.cab_sim_params_mut().enabled.set(false);
                 self.saturator_params_mut().enabled.set(true);
             }
@@ -172,7 +205,11 @@ impl Process for Channel {
     fn process(&mut self, sample: f32) -> f32 {
         // Signal flow: Input -> Gate -> Compressor -> EQ -> Saturator -> Cab Sim -> Gain -> Limiter -> Output
         let s = self.gate.process(sample);
-        let s = self.compressor.process(s);
+        let s = match self.compressor_type {
+            CompressorType::Standard => self.compressor_standard.process(s),
+            CompressorType::Comp1176 => self.compressor_1176.process(s),
+            CompressorType::Comp163 => self.compressor_163.process(s),
+        };
         let s = self.eq.process(s);
         let s = self.saturator.process(s);
         let s = self.cab_sim.process(s);

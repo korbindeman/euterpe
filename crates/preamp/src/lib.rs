@@ -16,14 +16,25 @@ pub enum ChannelMode {
 }
 
 // ---------------------------------------------------------------------------
+// Compressor type
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CompressorType {
+    /// Standard soft-knee compressor with full controls
+    Standard,
+    /// 1176-style FET compressor with feedback topology
+    Comp1176,
+    /// dbx 163-style compressor with single compression knob
+    #[default]
+    Comp163,
+}
+
+// ---------------------------------------------------------------------------
 // Preamp-specific constants
 // ---------------------------------------------------------------------------
 
 pub const SAMPLE_RATE: u32 = 48_000;
-
-// Compressor — preamp-specific attack times per mode
-pub const COMP_ATTACK_GUITAR_MS: f32 = 15.0;
-pub const COMP_ATTACK_BASS_MS: f32 = 20.0;
 
 // EQ — Guitar mode frequencies
 pub const EQ_LOW_FREQ_GUITAR: f32 = 200.0;

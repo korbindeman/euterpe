@@ -121,7 +121,10 @@ fn main() -> ! {
             if let Some(channel) = CHANNEL.borrow(cs).borrow_mut().as_mut() {
                 channel.params_mut().gain.set(gain);
                 channel.set_mode(current_mode);
-                channel.compressor_params_mut().enabled.set(comp_enabled);
+                channel
+                    .compressor_1176_params_mut()
+                    .enabled
+                    .set(comp_enabled);
             }
         });
 

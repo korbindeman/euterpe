@@ -6,8 +6,8 @@ use desktop_audio::{
     AudioEngine, AudioEngineConfig, KnobUi, ToggleUi, list_input_devices, list_output_devices,
     load_ir,
 };
-use preamp::ChannelMode;
 use preamp::dsp::cab_sim::IR_MAX_LENGTH;
+use preamp::{ChannelMode, CompressorType};
 
 use crate::state::{PreampProcessor, SharedState};
 
@@ -138,11 +138,67 @@ impl PreampApp {
                     // Compressor
                     ui.separator();
                     ui.heading("Compressor");
-                    channel.compressor_params_mut().enabled.ui(ui);
-                    channel.compressor_params_mut().threshold.ui(ui);
-                    channel.compressor_params_mut().ratio.ui(ui);
-                    channel.compressor_params_mut().attack.ui(ui);
-                    channel.compressor_params_mut().release.ui(ui);
+
+                    // Compressor type selector
+                    ui.horizontal(|ui| {
+                        ui.label("Type");
+                        let current_type = channel.compressor_type();
+                        let types = [
+                            (CompressorType::Standard, "Standard"),
+                            (CompressorType::Comp1176, "1176"),
+                            (CompressorType::Comp163, "163"),
+                        ];
+                        for (comp_type, label) in types {
+                            if ui
+                                .selectable_label(current_type == comp_type, label)
+                                .clicked()
+                            {
+                                channel.set_compressor_type(comp_type);
+                            }
+                        }
+                    });
+
+                    // Show controls based on selected compressor type
+                    match channel.compressor_type() {
+                        CompressorType::Standard => {
+                            channel.compressor_standard_params_mut().enabled.ui(ui);
+                            channel.compressor_standard_params_mut().threshold.ui(ui);
+                            channel.compressor_standard_params_mut().ratio.ui(ui);
+                            channel.compressor_standard_params_mut().attack.ui(ui);
+                            channel.compressor_standard_params_mut().release.ui(ui);
+                        }
+                        CompressorType::Comp1176 => {
+                            channel.compressor_1176_params_mut().enabled.ui(ui);
+                            channel.compressor_1176_params_mut().input.ui(ui);
+                            channel.compressor_1176_params_mut().output.ui(ui);
+
+                            // Ratio selector (fixed detents)
+                            ui.horizontal(|ui| {
+                                ui.label("Ratio");
+                                let current_ratio = channel.compressor_1176_params_mut().ratio();
+                                let ratios = [
+                                    (preamp::dsp::comp_1176::Ratio1176::R4, "4:1"),
+                                    (preamp::dsp::comp_1176::Ratio1176::R8, "8:1"),
+                                    (preamp::dsp::comp_1176::Ratio1176::R12, "12:1"),
+                                    (preamp::dsp::comp_1176::Ratio1176::R20, "20:1"),
+                                ];
+                                for (ratio, label) in ratios {
+                                    if ui.selectable_label(current_ratio == ratio, label).clicked()
+                                    {
+                                        channel.compressor_1176_params_mut().set_ratio(ratio);
+                                    }
+                                }
+                            });
+
+                            channel.compressor_1176_params_mut().attack.ui(ui);
+                            channel.compressor_1176_params_mut().release.ui(ui);
+                        }
+                        CompressorType::Comp163 => {
+                            channel.compressor_163_params_mut().enabled.ui(ui);
+                            channel.compressor_163_params_mut().compression.ui(ui);
+                            channel.compressor_163_params_mut().output.ui(ui);
+                        }
+                    }
 
                     // EQ
                     ui.separator();

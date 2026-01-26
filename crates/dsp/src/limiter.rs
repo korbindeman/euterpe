@@ -1,8 +1,6 @@
-#[allow(unused_imports)]
-use micromath::F32Ext;
-
 use crate::Process;
 use crate::params::{Knob, Toggle};
+use crate::utils::{db_to_linear, time_constant};
 
 /// Default limiter settings.
 pub const DEFAULT_THRESHOLD_DB: f32 = -1.0;
@@ -48,16 +46,6 @@ pub struct Limiter {
     /// Smoothed gain to avoid zipper noise
     gain: f32,
     gain_smooth_coeff: f32,
-}
-
-/// Convert milliseconds to envelope follower coefficient.
-fn time_constant(ms: f32, sample_rate: u32) -> f32 {
-    (-1.0 / (ms * 0.001 * sample_rate as f32)).exp()
-}
-
-/// Convert dB to linear amplitude.
-fn db_to_linear(db: f32) -> f32 {
-    10.0f32.powf(db / 20.0)
 }
 
 impl Limiter {
