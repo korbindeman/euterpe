@@ -20,4 +20,8 @@ build:
 
 flash: build
     rust-objcopy -O binary target/{{target}}/release/{{binary}} target/{{binary}}.bin
-    dfu-util -a 0 -s 0x08000000:leave -D target/{{binary}}.bin -d ,0483:df11
+    dfu-suffix --vid 0x0483 --pid 0xdf11 --add target/{{binary}}.bin
+    dfu-util -a 0 -s 0x08000000:leave -D target/{{binary}}.bin -d ,0483:df11 || true
+
+dev:
+    cargo run -p preamp_desktop

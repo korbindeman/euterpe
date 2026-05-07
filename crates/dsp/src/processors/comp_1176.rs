@@ -206,6 +206,10 @@ impl Comp1176 {
         &mut self.params
     }
 
+    pub fn reset(&mut self) {
+        self.envelope = 0.0;
+    }
+
     fn update_coefficients(&mut self) {
         if self.params.input.take_dirty() {
             self.input_gain = db_to_linear(self.params.input.get());

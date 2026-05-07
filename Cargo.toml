@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+    "crates/audio_app",
     "crates/dsp",
     "crates/desktop_audio",
     "crates/daisy_runtime",

@@ -67,6 +67,10 @@ impl Compressor {
         &mut self.params
     }
 
+    pub fn reset(&mut self) {
+        self.envelope = 0.0;
+    }
+
     fn update_coefficients(&mut self) {
         if self.params.threshold.take_dirty() {
             self.threshold_linear = db_to_linear(self.params.threshold.get());

@@ -3,11 +3,11 @@ use std::path::Path;
 use std::sync::Arc;
 
 use desktop_audio::{
-    AudioEngine, AudioEngineConfig, KnobUi, ToggleUi, list_input_devices, list_output_devices,
-    load_ir,
+    AudioEngine, AudioEngineConfig, list_input_devices, list_output_devices, load_ir,
 };
+use preamp::audio_app::{ParamKind, ParamModel, ParamValue};
 use preamp::dsp::cab_sim::IR_MAX_LENGTH;
-use preamp::{ChannelMode, CompressorType};
+use preamp::model;
 
 use crate::state::{PreampProcessor, SharedState};
 
@@ -45,10 +45,10 @@ impl PreampApp {
         let mut ch2_ir_filename = String::new();
 
         if let Ok(mut ch1) = state.ch1.lock() {
-            ch1.saturator_params_mut().enabled.set(false);
+            let _ = ch1.set_param(model::param::SATURATOR_ENABLED, ParamValue::Bool(false));
         }
         if let Ok(mut ch2) = state.ch2.lock() {
-            ch2.saturator_params_mut().enabled.set(false);
+            let _ = ch2.set_param(model::param::SATURATOR_ENABLED, ParamValue::Bool(false));
         }
 
         // Load default IR for both channels
@@ -106,137 +106,38 @@ impl PreampApp {
                 };
 
                 if let Ok(mut channel) = channel_mutex.lock() {
-                    // Mode selector
-                    ui.label("Mode");
-                    let mut mode = channel.mode();
-                    ui.horizontal(|ui| {
-                        if ui
-                            .radio_value(&mut mode, ChannelMode::Guitar, "Guitar")
-                            .changed()
-                        {
-                            channel.set_mode(mode);
+                    for section in model::UI_SECTIONS {
+                        let has_visible_controls = model::UI_CONTROLS.iter().any(|control| {
+                            control.section == *section
+                                && model::shows_ui_param(&channel, control.param_id)
+                        });
+                        if !has_visible_controls {
+                            continue;
                         }
-                        if ui
-                            .radio_value(&mut mode, ChannelMode::Bass, "Bass")
-                            .changed()
-                        {
-                            channel.set_mode(mode);
-                        }
-                    });
-                    ui.add_space(4.0);
 
-                    // Channel gain
-                    ui.heading("Channel");
-                    channel.params_mut().gain.ui(ui);
-
-                    // Gate
-                    ui.separator();
-                    ui.heading("Gate");
-                    channel.gate_params_mut().enabled.ui(ui);
-                    channel.gate_params_mut().threshold.ui(ui);
-
-                    // Compressor
-                    ui.separator();
-                    ui.heading("Compressor");
-
-                    // Compressor type selector
-                    ui.horizontal(|ui| {
-                        ui.label("Type");
-                        let current_type = channel.compressor_type();
-                        let types = [
-                            (CompressorType::Standard, "Standard"),
-                            (CompressorType::Comp1176, "1176"),
-                            (CompressorType::Comp163, "163"),
-                        ];
-                        for (comp_type, label) in types {
-                            if ui
-                                .selectable_label(current_type == comp_type, label)
-                                .clicked()
-                            {
-                                channel.set_compressor_type(comp_type);
+                        ui.separator();
+                        ui.heading(*section);
+                        for control in model::UI_CONTROLS.iter() {
+                            if control.section != *section {
+                                continue;
                             }
-                        }
-                    });
-
-                    // Show controls based on selected compressor type
-                    match channel.compressor_type() {
-                        CompressorType::Standard => {
-                            channel.compressor_standard_params_mut().enabled.ui(ui);
-                            channel.compressor_standard_params_mut().threshold.ui(ui);
-                            channel.compressor_standard_params_mut().ratio.ui(ui);
-                            channel.compressor_standard_params_mut().attack.ui(ui);
-                            channel.compressor_standard_params_mut().release.ui(ui);
-                        }
-                        CompressorType::Comp1176 => {
-                            channel.compressor_1176_params_mut().enabled.ui(ui);
-                            channel.compressor_1176_params_mut().input.ui(ui);
-                            channel.compressor_1176_params_mut().output.ui(ui);
-
-                            // Ratio selector (fixed detents)
-                            ui.horizontal(|ui| {
-                                ui.label("Ratio");
-                                let current_ratio = channel.compressor_1176_params_mut().ratio();
-                                let ratios = [
-                                    (preamp::dsp::comp_1176::Ratio1176::R4, "4:1"),
-                                    (preamp::dsp::comp_1176::Ratio1176::R8, "8:1"),
-                                    (preamp::dsp::comp_1176::Ratio1176::R12, "12:1"),
-                                    (preamp::dsp::comp_1176::Ratio1176::R20, "20:1"),
-                                ];
-                                for (ratio, label) in ratios {
-                                    if ui.selectable_label(current_ratio == ratio, label).clicked()
-                                    {
-                                        channel.compressor_1176_params_mut().set_ratio(ratio);
-                                    }
-                                }
-                            });
-
-                            channel.compressor_1176_params_mut().attack.ui(ui);
-                            channel.compressor_1176_params_mut().release.ui(ui);
-                        }
-                        CompressorType::Comp163 => {
-                            channel.compressor_163_params_mut().enabled.ui(ui);
-                            channel.compressor_163_params_mut().compression.ui(ui);
-                            channel.compressor_163_params_mut().output.ui(ui);
+                            if !model::shows_ui_param(&channel, control.param_id) {
+                                continue;
+                            }
+                            render_param(ui, &mut *channel, control.param_id);
                         }
                     }
 
-                    // EQ
-                    ui.separator();
-                    ui.heading("EQ");
-                    channel.eq_params_mut().low_enabled.ui(ui);
-                    channel.eq_params_mut().low_gain.ui(ui);
-                    channel.eq_params_mut().mid_enabled.ui(ui);
-                    channel.eq_params_mut().mid_gain.ui(ui);
-                    channel.eq_params_mut().high_enabled.ui(ui);
-                    channel.eq_params_mut().high_gain.ui(ui);
-
-                    // Saturator
-                    ui.separator();
-                    ui.heading("Saturator");
-                    channel.saturator_params_mut().enabled.ui(ui);
-                    channel.saturator_params_mut().drive.ui(ui);
-
-                    // Cab Sim (guitar mode only)
-                    let is_guitar = channel.mode() == ChannelMode::Guitar;
+                    // Cab Sim asset handling remains frontend-specific.
+                    let show_cab_ir = model::shows_ui_param(&channel, model::param::CAB_ENABLED);
                     let mut browse_clicked = false;
-                    if is_guitar {
-                        ui.separator();
-                        ui.heading("Cab Sim");
-                        channel.cab_sim_params_mut().enabled.ui(ui);
-
+                    if show_cab_ir {
                         ui.label("Load Cabinet IR");
                         browse_clicked = ui.button("Browse...").clicked();
                         if !browse_clicked && !ir_filename.is_empty() {
                             ui.label(ir_filename.as_str());
                         }
                     }
-
-                    // Limiter
-                    ui.separator();
-                    ui.heading("Limiter");
-                    channel.limiter_params_mut().enabled.ui(ui);
-                    channel.limiter_params_mut().threshold.ui(ui);
-                    channel.limiter_params_mut().release.ui(ui);
 
                     // Handle IR file dialog after releasing the channel lock
                     drop(channel);
@@ -380,4 +281,48 @@ fn toggle_button(ui: &mut egui::Ui, label: &str, active: &mut bool) -> bool {
         *active = !*active;
     }
     response.clicked()
+}
+
+fn render_param<M: ParamModel>(ui: &mut egui::Ui, model: &mut M, param_id: &str) {
+    let Some(spec) = model.app_spec().param(param_id).copied() else {
+        return;
+    };
+
+    match spec.kind {
+        ParamKind::Toggle { .. } => {
+            let mut value = matches!(model.get_param(param_id), Some(ParamValue::Bool(true)));
+            if ui.checkbox(&mut value, spec.label).changed() {
+                let _ = model.set_param(param_id, ParamValue::Bool(value));
+            }
+        }
+        ParamKind::Knob { min, max, .. } => {
+            let mut value = match model.get_param(param_id) {
+                Some(ParamValue::Float(value)) => value,
+                _ => return,
+            };
+            if ui
+                .add(egui::Slider::new(&mut value, min..=max).text(spec.label))
+                .changed()
+            {
+                let _ = model.set_param(param_id, ParamValue::Float(value));
+            }
+        }
+        ParamKind::Choice { options, .. } => {
+            let current = match model.get_param(param_id) {
+                Some(ParamValue::Choice(index)) => index,
+                _ => 0,
+            };
+            ui.horizontal(|ui| {
+                ui.label(spec.label);
+                for (index, option) in options.iter().enumerate() {
+                    if ui
+                        .selectable_label(current == index as u8, *option)
+                        .clicked()
+                    {
+                        let _ = model.set_param(param_id, ParamValue::Choice(index as u8));
+                    }
+                }
+            });
+        }
+    }
 }

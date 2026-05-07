@@ -14,9 +14,11 @@ use daisy_runtime::hal::prelude::*;
 use daisy_runtime::pac::{self, interrupt};
 use daisy_runtime::{audio, daisy, panic_halt as _};
 
+use preamp::audio_app::{ParamModel, ParamValue, apply_hardware_binding};
 use preamp::channel::Channel;
 use preamp::dsp::Process;
-use preamp::{ChannelMode, GAIN_MAX, GAIN_MIN, SAMPLE_RATE};
+use preamp::model;
+use preamp::{ChannelMode, SAMPLE_RATE};
 
 /// Wrapper to allow static UnsafeCell (single-core MCU, so this is safe).
 struct SyncStorage(core::cell::UnsafeCell<core::mem::MaybeUninit<Channel>>);
@@ -94,11 +96,9 @@ fn main() -> ! {
     // Main loop: read knobs/buttons and update parameters.
     // Poll at ~100Hz for responsive controls, blink LED every ~0.5s.
     let poll_delay = ccdr.clocks.sys_ck().to_Hz() / 100;
-    let volume_pot = Pot::new(GAIN_MIN, GAIN_MAX);
+    let volume_pot = Pot::new(0.0, 1.0);
     let mut mode_btn = Button::new(3); // ~30ms debounce at 100Hz
     let mut comp_btn = Button::new(3);
-    let mut current_mode = ChannelMode::Guitar;
-    let mut comp_enabled = true;
     let mut loop_count: u32 = 0;
 
     loop {
@@ -107,24 +107,42 @@ fn main() -> ! {
         let gain = volume_pot.scale(raw);
 
         // Check buttons.
-        if mode_btn.poll(mode_button.is_low()) {
-            current_mode = match current_mode {
-                ChannelMode::Guitar => ChannelMode::Bass,
-                ChannelMode::Bass => ChannelMode::Guitar,
-            };
-        }
-        if comp_btn.poll(comp_button.is_low()) {
-            comp_enabled = !comp_enabled;
-        }
+        let mode_pressed = mode_btn.poll(mode_button.is_low());
+        let comp_pressed = comp_btn.poll(comp_button.is_low());
 
         cortex_m::interrupt::free(|cs| {
             if let Some(channel) = CHANNEL.borrow(cs).borrow_mut().as_mut() {
-                channel.params_mut().gain.set(gain);
-                channel.set_mode(current_mode);
-                channel
-                    .compressor_1176_params_mut()
-                    .enabled
-                    .set(comp_enabled);
+                let _ = apply_hardware_binding(
+                    channel,
+                    &model::DAISY_BINDINGS[0],
+                    ParamValue::Float(gain),
+                );
+                let _ = apply_hardware_binding(
+                    channel,
+                    &model::DAISY_BINDINGS[1],
+                    ParamValue::Bool(mode_pressed),
+                );
+                let _ = apply_hardware_binding(
+                    channel,
+                    &model::DAISY_BINDINGS[2],
+                    ParamValue::Bool(comp_pressed),
+                );
+            }
+        });
+
+        let (current_mode, comp_enabled) = cortex_m::interrupt::free(|cs| {
+            if let Some(channel) = CHANNEL.borrow(cs).borrow().as_ref() {
+                let current_mode = match channel.get_param(model::param::MODE) {
+                    Some(ParamValue::Choice(1)) => ChannelMode::Bass,
+                    _ => ChannelMode::Guitar,
+                };
+                let comp_enabled = match channel.get_param(model::param::COMPRESSOR_ENABLED) {
+                    Some(ParamValue::Bool(value)) => value,
+                    _ => false,
+                };
+                (current_mode, comp_enabled)
+            } else {
+                (ChannelMode::Guitar, false)
             }
         });
 

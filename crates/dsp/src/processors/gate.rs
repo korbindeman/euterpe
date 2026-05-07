@@ -78,6 +78,12 @@ impl NoiseGate {
         &mut self.params
     }
 
+    pub fn reset(&mut self) {
+        self.envelope = 0.0;
+        self.gain = 1.0;
+        self.is_open = true;
+    }
+
     fn update_coefficients(&mut self) {
         if self.params.threshold.take_dirty() {
             let threshold_db = self.params.threshold.get();

@@ -123,6 +123,11 @@ impl Comp163 {
         &mut self.params
     }
 
+    pub fn reset(&mut self) {
+        self.rms_squared = 0.0;
+        self.gain_reduction_db = 0.0;
+    }
+
     fn update_coefficients(&mut self) {
         // Compression knob doesn't need caching - read directly in process
         let _ = self.params.compression.take_dirty();

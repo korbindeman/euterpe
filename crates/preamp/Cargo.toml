@@ -4,4 +4,5 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+audio_app = { path = "../audio_app" }
 dsp = { path = "../dsp" }

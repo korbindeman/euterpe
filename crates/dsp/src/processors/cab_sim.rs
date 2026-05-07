@@ -117,6 +117,21 @@ impl CabSim {
         self.ir_loaded = !ir.is_empty();
     }
 
+    /// Clear convolution history and pending output while keeping the loaded IR.
+    pub fn reset(&mut self) {
+        for fdl_part in &mut self.fdl {
+            for c in fdl_part.iter_mut() {
+                *c = Complex32 { re: 0.0, im: 0.0 };
+            }
+        }
+        self.fdl_pos = 0;
+        self.overlap = [0.0; BLOCK_SIZE];
+        self.input_buffer = [0.0; BLOCK_SIZE];
+        self.input_pos = 0;
+        self.output_buffer = [0.0; BLOCK_SIZE];
+        self.output_pos = 0;
+    }
+
     /// Process a full block using partitioned overlap-add convolution.
     fn process_block(&mut self) {
         // Prepare input spectrum: input samples zero-padded to FFT_SIZE

@@ -83,3 +83,116 @@ pub fn tanhf(x: f32) -> f32 {
     let e2x = (2.0 * x).exp();
     (e2x - 1.0) / (e2x + 1.0)
 }
+
+// ---------------------------------------------------------------------------
+// Delay line
+// ---------------------------------------------------------------------------
+
+/// A fixed-size circular delay buffer with linear interpolation.
+///
+/// The size N must be a power of 2 for efficient modulo operations.
+pub struct DelayLine<const N: usize> {
+    buffer: [f32; N],
+    write_pos: usize,
+    mask: usize,
+}
+
+impl<const N: usize> DelayLine<N> {
+    /// Create a new delay line. N must be a power of 2.
+    pub fn new() -> Self {
+        debug_assert!(N.is_power_of_two(), "DelayLine size must be a power of 2");
+        Self {
+            buffer: [0.0; N],
+            write_pos: 0,
+            mask: N - 1,
+        }
+    }
+
+    /// Write a sample to the delay line and advance the write position.
+    #[inline]
+    pub fn write(&mut self, sample: f32) {
+        self.buffer[self.write_pos] = sample;
+        self.write_pos = (self.write_pos + 1) & self.mask;
+    }
+
+    /// Read from the delay line with linear interpolation.
+    /// `delay_samples` is the number of samples to look back from the current write position.
+    #[inline]
+    pub fn read(&self, delay_samples: f32) -> f32 {
+        let read_pos = self.write_pos as f32 - delay_samples;
+        let read_pos = if read_pos < 0.0 {
+            read_pos + N as f32
+        } else {
+            read_pos
+        };
+
+        let idx0 = read_pos as usize & self.mask;
+        let idx1 = (idx0 + 1) & self.mask;
+        let frac = read_pos - read_pos.floor();
+
+        self.buffer[idx0] * (1.0 - frac) + self.buffer[idx1] * frac
+    }
+
+    /// Read from a fixed integer delay (no interpolation).
+    #[inline]
+    pub fn read_fixed(&self, delay_samples: usize) -> f32 {
+        let idx = (self.write_pos.wrapping_sub(delay_samples)) & self.mask;
+        self.buffer[idx]
+    }
+
+    /// Clear the delay buffer.
+    pub fn clear(&mut self) {
+        self.buffer = [0.0; N];
+    }
+}
+
+impl<const N: usize> Default for DelayLine<N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// LFO (Low Frequency Oscillator)
+// ---------------------------------------------------------------------------
+
+/// A simple sine-wave LFO with configurable rate.
+pub struct Lfo {
+    phase: f32,
+    phase_inc: f32,
+    sample_rate: f32,
+}
+
+impl Lfo {
+    /// Create a new LFO with the given rate in Hz.
+    pub fn new(rate_hz: f32, sample_rate: u32) -> Self {
+        let sr = sample_rate as f32;
+        Self {
+            phase: 0.0,
+            phase_inc: rate_hz / sr,
+            sample_rate: sr,
+        }
+    }
+
+    /// Set the LFO rate in Hz.
+    #[inline]
+    pub fn set_rate(&mut self, rate_hz: f32) {
+        self.phase_inc = rate_hz / self.sample_rate;
+    }
+
+    /// Get the current LFO value (sine wave, range -1 to 1) and advance phase.
+    #[inline]
+    pub fn tick(&mut self) -> f32 {
+        let value = (self.phase * core::f32::consts::TAU).sin();
+        self.phase += self.phase_inc;
+        if self.phase >= 1.0 {
+            self.phase -= 1.0;
+        }
+        value
+    }
+
+    /// Reset the LFO phase to zero.
+    pub fn reset(&mut self) {
+        self.phase = 0.0;
+    }
+}
