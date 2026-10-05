@@ -8,3 +8,4 @@ pub mod eq;
 pub mod gate;
 pub mod limiter;
 pub mod saturator;
+pub mod wurli;

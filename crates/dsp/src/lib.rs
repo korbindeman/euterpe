@@ -17,6 +17,7 @@ pub use processors::eq;
 pub use processors::gate;
 pub use processors::limiter;
 pub use processors::saturator;
+pub use processors::wurli;
 
 // ---------------------------------------------------------------------------
 // Process trait — every DSP block implements this

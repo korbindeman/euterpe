@@ -107,6 +107,61 @@ impl Biquad {
         Self::from_raw(b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0)
     }
 
+    /// Create a band-pass filter with 0 dB peak gain at `freq`.
+    pub fn bandpass(freq: f32, q: f32, sample_rate: f32) -> Self {
+        let w0 = 2.0 * core::f32::consts::PI * freq / sample_rate;
+        let alpha = w0.sin() / (2.0 * q);
+        let a0 = 1.0 + alpha;
+        Self::from_raw(
+            alpha / a0,
+            0.0,
+            -alpha / a0,
+            -2.0 * w0.cos() / a0,
+            (1.0 - alpha) / a0,
+        )
+    }
+
+    /// Create a 2-pole low-pass filter.
+    pub fn lowpass(freq: f32, q: f32, sample_rate: f32) -> Self {
+        let w0 = 2.0 * core::f32::consts::PI * freq / sample_rate;
+        let cos_w0 = w0.cos();
+        let alpha = w0.sin() / (2.0 * q);
+        let a0 = 1.0 + alpha;
+        let b1 = 1.0 - cos_w0;
+        Self::from_raw(
+            0.5 * b1 / a0,
+            b1 / a0,
+            0.5 * b1 / a0,
+            -2.0 * cos_w0 / a0,
+            (1.0 - alpha) / a0,
+        )
+    }
+
+    /// Create a 2-pole high-pass filter.
+    pub fn highpass(freq: f32, q: f32, sample_rate: f32) -> Self {
+        let w0 = 2.0 * core::f32::consts::PI * freq / sample_rate;
+        let cos_w0 = w0.cos();
+        let alpha = w0.sin() / (2.0 * q);
+        let a0 = 1.0 + alpha;
+        let b1 = 1.0 + cos_w0;
+        Self::from_raw(
+            0.5 * b1 / a0,
+            -b1 / a0,
+            0.5 * b1 / a0,
+            -2.0 * cos_w0 / a0,
+            (1.0 - alpha) / a0,
+        )
+    }
+
+    /// Replace coefficients but keep the filter state (click-free retuning).
+    pub fn retune(&mut self, other: Biquad) {
+        self.b0 = other.b0;
+        self.b1 = other.b1;
+        self.b2 = other.b2;
+        self.a1 = other.a1;
+        self.a2 = other.a2;
+    }
+
     /// Replace all coefficients (and reset state) from another `Biquad`.
     pub fn reconfigure(&mut self, other: Biquad) {
         *self = other;

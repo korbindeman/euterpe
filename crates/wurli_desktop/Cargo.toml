@@ -1,0 +1,10 @@
+[package]
+name = "wurli_desktop"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+dsp = { path = "../dsp" }
+desktop_audio = { path = "../desktop_audio", features = ["egui"] }
+eframe = "0.31"
+hound = "3.5"

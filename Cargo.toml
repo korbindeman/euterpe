@@ -9,6 +9,7 @@ members = [
     "crates/preamp_desktop",
     "crates/preamp_daisy",
     "crates/ir_embed",
+    "crates/wurli_desktop",
 ]
 
 [workspace.package]
@@ -26,4 +27,7 @@ opt-level = 3
 opt-level = 3
 
 [profile.dev.package.preamp_desktop]
+opt-level = 2
+
+[profile.dev.package.wurli_desktop]
 opt-level = 2
