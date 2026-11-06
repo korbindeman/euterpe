@@ -24,7 +24,9 @@ use std::path::{Path, PathBuf};
 
 use euterpe_offline::wav::{self, Audio, Encoding};
 
-pub use manifest::{ARCHIVES, Archive, DATASETS, Dataset, EXCERPTS, Excerpt, Kind, Source, Start};
+pub use manifest::{
+    ARCHIVES, Align, Archive, DATASETS, Dataset, EXCERPTS, Excerpt, Kind, Source, Start,
+};
 
 /// Every committed fixture is at this rate.
 pub const SAMPLE_RATE: u32 = 48_000;
@@ -149,6 +151,9 @@ pub struct CutReport {
 
 const FADE_S: f32 = 0.005;
 
+/// Onset threshold, as a fraction of the clip's peak.
+pub const ATTACK_ONSET: f32 = 0.1;
+
 /// Raised-cosine fades so a clip cut mid-note doesn't start or end with a
 /// step (which a drive stage would turn into a broadband click).
 fn fade(x: &mut [f32], fade_in: bool) {
@@ -198,7 +203,7 @@ pub fn loudest_start(x: &[f32], len: usize) -> usize {
 pub fn cut(excerpt: &Excerpt) -> Result<CutReport, Error> {
     let (di_src, out_src) = match excerpt.kind {
         Kind::Di { di } => (di, None),
-        Kind::Paired { di, out, .. } => (di, Some(out)),
+        Kind::Paired { di, out, align, .. } => (di, Some((out, align))),
     };
     let di = read_mono(&source_path(&excerpt.dataset, &di_src))?;
     let len = (excerpt.len_s * SAMPLE_RATE as f32) as usize;
@@ -216,10 +221,18 @@ pub fn cut(excerpt: &Excerpt) -> Result<CutReport, Error> {
     let mut di_cut = window(&di, start as isize, len);
     let mut clips = vec![];
     let out_cut = match out_src {
-        Some(src) => {
+        Some((src, how)) => {
             let out = read_mono(&source_path(&excerpt.dataset, &src))?;
-            let max_lag = (align::MAX_LAG_S * SAMPLE_RATE as f32) as usize;
-            let a = align::align(&di_cut, &out, start, max_lag);
+            let ms = |v: f32| (v * SAMPLE_RATE as f32 / 1000.0) as usize;
+            let a = match how {
+                Align::Window { max_lag_ms } => align::align(&di_cut, &out, start, ms(max_lag_ms)),
+                Align::Attack { max_lag_ms } => {
+                    // 20 ms before the DI's attack to 100 ms after it.
+                    let at = align::onset(&di_cut, ATTACK_ONSET).saturating_sub(ms(20.0));
+                    let end = (at + ms(120.0)).min(di_cut.len());
+                    align::align(&di_cut[at..end], &out, start + at, ms(max_lag_ms))
+                }
+            };
             report.lag = Some(a.lag);
             report.inverted = a.inverted;
             report.correlation = Some(a.correlation);

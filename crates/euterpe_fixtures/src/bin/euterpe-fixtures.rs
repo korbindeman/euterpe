@@ -230,7 +230,9 @@ fn cmd_list() -> String {
         .map(|e| {
             let (kind, hardware, source_cached) = match e.kind {
                 Kind::Di { di } => ("di", None, cached(&e.dataset, &di).is_some()),
-                Kind::Paired { di, out, hardware } => (
+                Kind::Paired {
+                    di, out, hardware, ..
+                } => (
                     "paired",
                     Some(hardware),
                     cached(&e.dataset, &di).is_some() && cached(&e.dataset, &out).is_some(),

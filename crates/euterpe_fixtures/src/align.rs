@@ -6,9 +6,6 @@
 //! then exact at full rate. The absolute value catches polarity flips from
 //! a mic or an inverting stage.
 
-/// Largest lag searched, in seconds.
-pub const MAX_LAG_S: f32 = 0.15;
-
 const DECIMATE: usize = 4;
 const REFINE: isize = 2 * DECIMATE as isize;
 
@@ -84,6 +81,14 @@ pub fn align(di_window: &[f32], out: &[f32], start: usize, max_lag: usize) -> Al
     }
 }
 
+/// First sample whose magnitude reaches `fraction` of the peak.
+pub fn onset(x: &[f32], fraction: f32) -> usize {
+    let peak = x.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+    x.iter()
+        .position(|v| v.abs() >= fraction * peak && peak > 0.0)
+        .unwrap_or(0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -125,5 +130,38 @@ mod tests {
         assert_eq!(a.lag, -500);
         assert!(!a.inverted);
         assert!(a.correlation > 0.999);
+    }
+
+    #[test]
+    fn attack_window_pins_a_sustained_note() {
+        // A plucked 165 Hz note starting at 0.2 s, and a clipped copy that
+        // leads by 3 ms (like a pedal recorded on a different pass).
+        let sr = 48_000.0;
+        let note: Vec<f32> = (0..144_000)
+            .map(|i| {
+                let t = i as f32 / sr - 0.2;
+                if t < 0.0 {
+                    0.0
+                } else {
+                    (std::f32::consts::TAU * 165.0 * t).sin() * (-t * 2.0).exp() * 0.8
+                }
+            })
+            .collect();
+        let lead = 144;
+        let out: Vec<f32> = note[lead..].iter().map(|&x| (4.0 * x).tanh()).collect();
+        let at = onset(&note, 0.1) - 960;
+        let a = align(&note[at..at + 5_760], &out, at, 480);
+        assert!((a.lag + lead as isize).abs() <= 2, "{a:?}");
+        assert!(!a.inverted);
+    }
+
+    #[test]
+    fn onset_finds_first_crossing() {
+        let mut x = vec![0.0f32; 1000];
+        x[300] = 0.05;
+        x[400] = 1.0;
+        assert_eq!(onset(&x, 0.1), 400);
+        assert_eq!(onset(&x, 0.01), 300);
+        assert_eq!(onset(&[0.0; 10], 0.1), 0);
     }
 }

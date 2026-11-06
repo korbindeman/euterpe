@@ -66,16 +66,16 @@ impl Sha256 {
         }
         self.update(&bits.to_be_bytes());
         let mut out = [0u8; 32];
-        for (o, s) in out.chunks_exact_mut(4).zip(self.state) {
-            o.copy_from_slice(&s.to_be_bytes());
+        for (o, s) in out.as_chunks_mut::<4>().0.iter_mut().zip(self.state) {
+            *o = s.to_be_bytes();
         }
         out
     }
 
     fn compress(&mut self, block: &[u8; 64]) {
         let mut w = [0u32; 64];
-        for (i, c) in block.chunks_exact(4).enumerate() {
-            w[i] = u32::from_be_bytes([c[0], c[1], c[2], c[3]]);
+        for (i, c) in block.as_chunks::<4>().0.iter().enumerate() {
+            w[i] = u32::from_be_bytes(*c);
         }
         for i in 16..64 {
             let s0 = w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3);

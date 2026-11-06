@@ -201,7 +201,21 @@ pub enum Kind {
         out: Source,
         /// What `out` went through.
         hardware: &'static str,
+        align: Align,
     },
+}
+
+/// How a paired output is aligned to its DI.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Align {
+    /// Correlate over the whole excerpt, searching up to `max_lag_ms`.
+    /// Right for real playing, where many note onsets pin the lag down.
+    Window { max_lag_ms: f32 },
+    /// Correlate only over the first pick attack, searching up to
+    /// `max_lag_ms`. Needed for single sustained notes: over a long window,
+    /// correlation locks onto a whole number of periods away (it chose
+    /// +60 ms on a Tube Screamer note whose true lag is ~0).
+    Attack { max_lag_ms: f32 },
 }
 
 /// A short clip committed to `fixtures/committed/`.
@@ -269,6 +283,7 @@ pub const EXCERPTS: &[Excerpt] = &[
             di: src("Clean.zip", "Clean/Bridge/5-7.wav"),
             out: src("TubeScreamer.zip", "TubeScreamer/Bridge/5-7.wav"),
             hardware: "Ibanez Mini Tube Screamer: overdrive 1.0, tone 0.5, level 0.5",
+            align: Align::Attack { max_lag_ms: 10.0 },
         },
         start: Start::At(0.0),
         len_s: 3.0,
@@ -281,6 +296,7 @@ pub const EXCERPTS: &[Excerpt] = &[
             di: src("Clean.zip", "Clean/Middle/3-2.wav"),
             out: src("BluesDriver.zip", "BluesDriver/Middle/3-2.wav"),
             hardware: "Boss BD-2: gain 1.0, tone 0.5, level 0.5",
+            align: Align::Attack { max_lag_ms: 10.0 },
         },
         start: Start::At(0.0),
         len_s: 3.0,
@@ -293,6 +309,7 @@ pub const EXCERPTS: &[Excerpt] = &[
             di: src("Clean.zip", "Clean/Neck/6-5.wav"),
             out: src("RAT.zip", "RAT/Neck/6-5.wav"),
             hardware: "Pro Co RAT2: distortion 1.0, filter 0.5, volume 1.0",
+            align: Align::Attack { max_lag_ms: 10.0 },
         },
         start: Start::At(0.0),
         len_s: 3.0,
@@ -312,6 +329,7 @@ pub const EXCERPTS: &[Excerpt] = &[
                 "P1_techniques/audio/micamp/micamp_PalmMute.wav",
             ),
             hardware: "Guitar amp, close mic (Guitar-TECHS player 1 rig)",
+            align: Align::Window { max_lag_ms: 150.0 },
         },
         start: Start::Loudest,
         len_s: 4.0,
@@ -330,6 +348,7 @@ pub const EXCERPTS: &[Excerpt] = &[
                 "P1_chords/audio/micamp/micamp_Set1_maj.wav",
             ),
             hardware: "Guitar amp, close mic (Guitar-TECHS player 1 rig)",
+            align: Align::Window { max_lag_ms: 150.0 },
         },
         start: Start::Loudest,
         len_s: 4.0,
@@ -345,6 +364,7 @@ pub const EXCERPTS: &[Excerpt] = &[
             ),
             out: src("P3_music.zip", "P3_music/audio/micamp/micamp_01.wav"),
             hardware: "Guitar amp, close mic (Guitar-TECHS player 3 rig)",
+            align: Align::Window { max_lag_ms: 150.0 },
         },
         start: Start::Loudest,
         len_s: 4.0,
