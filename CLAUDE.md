@@ -22,7 +22,31 @@ cargo check --workspace
 cargo test --workspace
 ```
 
-## Architecture
+## Euterpe (toolkit in progress)
+
+This repo is becoming **Euterpe**, a toolkit for building audio hardware. The design is in `specs/ARCHITECTURE.md`; read it before adding processors or devices. New work goes into the `euterpe_*` crates. The older crates below are migrated step by step.
+
+- **`crates/euterpe_core`** (`no_std`): `Processor` (block-based, `BLOCK = 32`), `SampleProcessor` + `PerSample`, `Ctx`, `params!` / `ParamSet` schemas, `Smoother` / `Ramp`, `fastmath` (tested error bounds), `Device`.
+- **`crates/euterpe_offline`**: WAV I/O, `render` / `render_with` (latency-compensated, deterministic), test signals, and `check::check_processor`.
+- **`crates/euterpe_cli`**: the `euterpe` binary. Devices are registered in `src/registry.rs`.
+- **`devices/demo`**: `demo.gain` and `demo.drive`, the reference examples for writing a processor and a device.
+
+```bash
+just euterpe devices                      # list devices (JSON)
+just euterpe schema demo.drive            # parameter schema (JSON)
+just euterpe render demo.drive --gen sine:220 --set drive=24 --out out.wav
+just test-euterpe                         # tests for the Euterpe crates only
+```
+
+### Rules for new processors
+
+1. Implement `Processor` (or `SampleProcessor` wrapped in `PerSample`) with params declared via `params!`. No allocation, panics or dynamic dispatch in `process`.
+2. Smooth audible params with `Smoother`: `prepare` it with `Params::smooth_ms(id)`, call `reset()` from the processor's `reset`, and call `block(target)` once per block.
+3. Use `euterpe_core::fastmath` in the hot path, not `micromath` or `std` math.
+4. Add a test that calls `euterpe_offline::check::check_processor::<YourProcessor>`, plus tests for the processor's actual behavior.
+5. Register new devices in `crates/euterpe_cli/src/registry.rs`.
+
+## Architecture (legacy crates)
 
 ### Crate Structure
 

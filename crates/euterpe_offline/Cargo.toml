@@ -1,0 +1,8 @@
+[package]
+name = "euterpe_offline"
+description = "Offline Euterpe platform: deterministic WAV-in, WAV-out rendering, test signals and processor checks."
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+euterpe_core = { path = "../euterpe_core" }

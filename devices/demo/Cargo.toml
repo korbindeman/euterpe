@@ -1,0 +1,11 @@
+[package]
+name = "euterpe_demo"
+description = "Demo Euterpe devices: a gain stage and a tanh drive. Small, complete examples of processors and devices."
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+euterpe_core = { path = "../../crates/euterpe_core" }
+
+[dev-dependencies]
+euterpe_offline = { path = "../../crates/euterpe_offline" }

@@ -1,0 +1,7 @@
+[package]
+name = "euterpe_core"
+description = "Core traits and primitives for Euterpe: block processing, parameters, smoothing, fast math."
+version.workspace = true
+edition.workspace = true
+
+[dependencies]

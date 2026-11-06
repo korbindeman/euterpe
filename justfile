@@ -25,3 +25,11 @@ flash: build
 
 dev:
     cargo run -p preamp_desktop
+
+# Euterpe CLI, e.g. `just euterpe render demo.drive --gen sine:220 --out out.wav`
+euterpe *args:
+    cargo run -q --release -p euterpe_cli -- {{args}}
+
+# Test the Euterpe crates only (no hardware or desktop dependencies)
+test-euterpe:
+    cargo test -p euterpe_core -p euterpe_offline -p euterpe_cli -p euterpe_demo

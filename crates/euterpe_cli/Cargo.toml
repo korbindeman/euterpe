@@ -1,0 +1,14 @@
+[package]
+name = "euterpe_cli"
+description = "The euterpe command: list devices, dump parameter schemas, render audio offline."
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "euterpe"
+path = "src/main.rs"
+
+[dependencies]
+euterpe_core = { path = "../euterpe_core" }
+euterpe_offline = { path = "../euterpe_offline" }
+euterpe_demo = { path = "../../devices/demo" }
