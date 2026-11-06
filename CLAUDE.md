@@ -9,7 +9,10 @@ A dual-channel instrument preamp/DI box with amp simulation. Desktop-first devel
 ## Build Commands
 
 ```bash
-# Desktop app
+# Desktop app: any Euterpe device through your interface
+just play demo.drive
+
+# Legacy preamp desktop app
 cargo run -p preamp_desktop
 
 # Daisy Seed firmware (requires ARM toolchain)
@@ -40,6 +43,7 @@ This repo is becoming **Euterpe**, a toolkit for building audio hardware. The de
 - **`crates/euterpe_bench_qemu`**: bench firmware for QEMU's `mps2-an500` (a Cortex-M7). Run through `euterpe bench`, never directly.
 - **`crates/euterpe_daisy`**: the Daisy Seed `Platform`. Runs a device on the codec, measures every block with the DWT cycle counter, blinks the LED fast if a block goes over budget.
 - **`devices/demo_daisy`**: firmware running `demo.drive` on the Seed (`just flash demo_daisy`).
+- **`crates/euterpe_desktop`**: the desktop platform, `euterpe-desktop` (`just play demo.drive`). Plays any registered device through an audio interface (a Volt if connected), with a panel generated from the schema, test-signal and WAV-loop sources, bypass, meters and host load.
 
 ```bash
 just euterpe devices                      # list devices (JSON)

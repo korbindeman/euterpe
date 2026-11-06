@@ -55,6 +55,10 @@ bench *args:
 bench-baseline:
     cargo run -q --release -p euterpe_cli -- bench --write-baseline benches/qemu-baseline.txt
 
+# Play a device through the audio interface, e.g. `just play demo.drive`.
+play *args:
+    cargo run -q --release -p euterpe_desktop -- {{args}}
+
 dev:
     cargo run -p preamp_desktop
 

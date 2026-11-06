@@ -19,6 +19,8 @@ pub trait Device {
     /// `euterpe bench` reports every device against its budget.
     const BUDGET_CYCLES_PER_BLOCK: u32 = 200_000;
 
-    /// The signal graph.
-    type Graph: Processor + Default;
+    /// The signal graph. `Send + 'static` so a host can move it to its audio thread;
+    /// graphs are plain data, so this holds unless a processor keeps a raw
+    /// pointer.
+    type Graph: Processor<Params: Send + 'static> + Default + Send + 'static;
 }

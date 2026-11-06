@@ -14,6 +14,7 @@ members = [
     "crates/euterpe_cli",
     "crates/euterpe_bench",
     "crates/euterpe_registry",
+    "crates/euterpe_desktop",
     "crates/euterpe_bench_qemu",
     "crates/euterpe_daisy",
     "devices/demo_daisy",
