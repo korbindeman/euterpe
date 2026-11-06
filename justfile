@@ -32,4 +32,8 @@ euterpe *args:
 
 # Test the Euterpe crates only (no hardware or desktop dependencies)
 test-euterpe:
-    cargo test -p euterpe_core -p euterpe_offline -p euterpe_cli -p euterpe_demo
+    cargo test -p euterpe_core -p euterpe_offline -p euterpe_cli -p euterpe_demo -p euterpe_fixtures
+
+# Guitar test fixtures, e.g. `just fixtures fetch`, `just fixtures excerpt`, `just fixtures list`
+fixtures *args:
+    cargo run -q --release -p euterpe_fixtures --bin euterpe-fixtures -- {{args}}
