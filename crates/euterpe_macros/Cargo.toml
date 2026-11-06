@@ -1,0 +1,16 @@
+[package]
+name = "euterpe_macros"
+description = "Derive macros for Euterpe: #[derive(Params)] and #[derive(Chain)]. Re-exported by euterpe_core."
+version.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["full"] }

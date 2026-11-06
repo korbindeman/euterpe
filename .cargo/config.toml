@@ -1,4 +1,7 @@
 [target.thumbv7em-none-eabihf]
 rustflags = [
     "-C", "link-arg=-Tlink.x",
+    # The STM32H750's Cortex-M7 has a double-precision FPU (FPv5-D16). Without
+    # this, f64 compiles to soft-float calls and LLVM uses a generic schedule.
+    "-C", "target-cpu=cortex-m7",
 ]

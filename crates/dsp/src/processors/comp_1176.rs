@@ -248,6 +248,10 @@ impl Comp1176 {
     #[inline]
     fn program_dependent_coeffs(&self, level_db: f32) -> (f32, f32) {
         // Calculate how far above threshold we are (0.0 to ~1.0 for typical signals)
+        #[allow(
+            clippy::manual_clamp,
+            reason = "max/min maps NaN to 0; clamp would pass it through"
+        )]
         let over_threshold = ((level_db - THRESHOLD_DB) / 20.0).max(0.0).min(1.0);
 
         // Speed up attack/release for louder signals

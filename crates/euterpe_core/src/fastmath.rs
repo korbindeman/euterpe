@@ -11,14 +11,19 @@
 //! | [`log2`] | positive normal floats | 4e-6 absolute (f32 rounding of the exponent sum at large magnitudes) |
 //! | [`ln`] | positive normal floats | 3e-6 absolute |
 //! | [`tanh`] | all finite | 3e-7 absolute |
+//! | [`sin_turns`], [`cos_turns`] | `|x| < 2^22` turns | 3e-7 absolute, exactly odd/even, never past ±1 |
+//! | [`tan_pi`] | `[0, 0.49]` | 1.5e-6 relative |
 //! | [`db_to_gain`] | `[-120, 120]` dB | 1e-6 relative |
 //! | [`gain_to_db`] | `>= 1e-6` | 3e-5 dB |
+//! | [`power_to_db`] | `>= 1e-12` | 2e-5 dB |
 //!
 //! Outside their domains the functions saturate rather than produce NaN,
 //! except [`log2`]/[`ln`] of non-positive input, which return `-inf`.
 
-// Coefficients are kept exactly as fitted; clippy would round some of them.
-#![allow(clippy::excessive_precision)]
+#![allow(
+    clippy::excessive_precision,
+    reason = "coefficients are kept exactly as fitted; clippy would round some of them"
+)]
 
 use core::f32::consts::{LN_2, LOG2_E};
 
@@ -32,9 +37,13 @@ const EXP2_MAX_ARG: f32 = f32::from_bits(0x42ff_ffff);
 
 /// Largest integer less than or equal to `x`, for `x` within `i32` range.
 #[inline(always)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "documented: x must be within i32 range"
+)]
 pub fn floor_i32(x: f32) -> i32 {
     let i = x as i32;
-    i - ((i as f32) > x) as i32
+    i - i32::from((i as f32) > x)
 }
 
 /// `2^x`. Max relative error 2.5e-7 on `[-126, 128)`; saturates outside.
@@ -48,7 +57,7 @@ pub fn exp2(x: f32) -> f32 {
     let p = 1.0
         + f * (0.693_151_74
             + f * (0.240_159_27 + f * (0.055_818_675 + f * (0.008_990_997 + f * 0.001_879_317_8))));
-    let scale = f32::from_bits(((xi + 127) as u32) << 23);
+    let scale = f32::from_bits((xi + 127).cast_unsigned() << 23);
     p * scale
 }
 
@@ -66,7 +75,7 @@ pub fn log2(x: f32) -> f32 {
         return f32::NEG_INFINITY;
     }
     let bits = x.to_bits();
-    let e = ((bits >> 23) & 0xff) as i32 - 127;
+    let e = ((bits >> 23) & 0xff).cast_signed() - 127_i32;
     let m = f32::from_bits((bits & 0x007f_ffff) | 0x3f80_0000); // [1, 2)
     let t = m - 1.0;
     // log2(1 + t) on [0, 1), degree 6.
@@ -88,10 +97,64 @@ pub fn ln(x: f32) -> f32 {
 #[inline]
 pub fn tanh(x: f32) -> f32 {
     // Computed on |x| so the result is exactly odd; tanh(0) = 0 exactly.
-    let a = x.abs().min(9.0);
-    let e = exp2(a * (2.0 * LOG2_E));
-    let y = if a >= 9.0 { 1.0 } else { 1.0 - 2.0 / (e + 1.0) };
-    y.copysign(x)
+    tanh_magnitude(x.abs()).copysign(x)
+}
+
+/// `tanh(a)` for `a >= 0`.
+#[inline(always)]
+fn tanh_magnitude(a: f32) -> f32 {
+    let a = a.min(9.0);
+    if a >= 9.0 {
+        return 1.0;
+    }
+    tanh_from_exp(exp2(a * (2.0 * LOG2_E)))
+}
+
+/// `tanh(a)` from `e = e^(2a)`.
+#[inline(always)]
+fn tanh_from_exp(e: f32) -> f32 {
+    1.0 - 2.0 / (e + 1.0)
+}
+
+/// `sin(2 pi x)`: the sine of `x` turns. Max absolute error 3e-7 for
+/// `|x| < 2^22` (past that, f32 has no fractional turns left). Exactly odd,
+/// exactly 0 at whole and half turns, and never past ±1.
+#[inline]
+pub fn sin_turns(x: f32) -> f32 {
+    // The nearest whole turn away: r in [-0.5, 0.5].
+    let r = x - floor_i32(x + 0.5) as f32;
+    // sin(2 pi a) = sin(2 pi (1/2 - a)): fold onto [0, 1/4].
+    let a = r.abs();
+    let a = a.min(0.5 - a);
+    sin_quarter(a).copysign(r)
+}
+
+/// `cos(2 pi x)`, with the error bound of [`sin_turns`].
+#[inline]
+pub fn cos_turns(x: f32) -> f32 {
+    sin_turns(x + 0.25)
+}
+
+/// `sin(2 pi a)` for `a` in `[0, 1/4]`: odd, degree 9, minimax. At most
+/// 0.99999994 at `a = 1/4`.
+#[inline(always)]
+#[expect(
+    clippy::approx_constant,
+    reason = "a fitted coefficient, one ulp below TAU"
+)]
+fn sin_quarter(a: f32) -> f32 {
+    let a2 = a * a;
+    a * (6.283_185 + a2 * (-41.341_656 + a2 * (81.601_006 + a2 * (-76.549_87 + a2 * 39.537_426))))
+}
+
+/// `tan(pi x)` for `x` in `[0, 0.49]`: the prewarped cutoff of a
+/// bilinear-transform filter, `x = cutoff / sample_rate`. Max relative error
+/// 1.5e-6. Clamped to that domain.
+#[inline]
+pub fn tan_pi(x: f32) -> f32 {
+    let h = 0.5 * x.clamp(0.0, 0.49);
+    // Both in [0, 1/4]: no reduction needed.
+    sin_quarter(h) / sin_quarter(0.25 - h)
 }
 
 /// Decibels to linear gain. Max relative error 1e-6 on `[-120, 120]` dB.
@@ -107,7 +170,20 @@ pub fn gain_to_db(gain: f32) -> f32 {
     log2(gain.max(1e-6)) * LOG2_TO_DB
 }
 
+/// Power (a squared amplitude) to decibels, `10 log10(p)`: for RMS
+/// detectors, without a square root. Inputs below 1e-12 (-120 dB) are
+/// clamped. Max absolute error 1.5e-5 dB.
+#[inline]
+pub fn power_to_db(power: f32) -> f32 {
+    log2(power.max(1e-12)) * (0.5 * LOG2_TO_DB)
+}
+
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    clippy::cast_possible_truncation,
+    reason = "tests compare exact results on purpose, against std on small values"
+)]
 mod tests {
     extern crate std;
     use super::*;
@@ -123,8 +199,8 @@ mod tests {
         xs: impl Iterator<Item = f32>,
     ) -> f64 {
         xs.map(|x| {
-            let want = g(x as f64);
-            ((f(x) as f64 - want) / want).abs()
+            let want = g(f64::from(x));
+            ((f64::from(f(x)) - want) / want).abs()
         })
         .fold(0.0, f64::max)
     }
@@ -134,7 +210,7 @@ mod tests {
         g: impl Fn(f64) -> f64,
         xs: impl Iterator<Item = f32>,
     ) -> f64 {
-        xs.map(|x| (f(x) as f64 - g(x as f64)).abs())
+        xs.map(|x| (f64::from(f(x)) - g(f64::from(x))).abs())
             .fold(0.0, f64::max)
     }
 
@@ -174,7 +250,7 @@ mod tests {
     fn log2_bound() {
         // Spans many octaves, including dense coverage of [1, 2).
         let xs = sweep(-40.0, 40.0, 200_000)
-            .map(|p| p.exp2())
+            .map(f32::exp2)
             .chain(sweep(1.0, 2.0, 200_000));
         let e = max_abs_err(log2, f64::log2, xs);
         assert!(e < 4e-6, "log2 abs err {e}");
@@ -184,7 +260,7 @@ mod tests {
 
     #[test]
     fn ln_bound() {
-        let xs = sweep(-30.0, 30.0, 200_000).map(|p| p.exp2());
+        let xs = sweep(-30.0, 30.0, 200_000).map(f32::exp2);
         let e = max_abs_err(ln, f64::ln, xs);
         assert!(e < 3e-6, "ln abs err {e}");
     }
@@ -224,5 +300,117 @@ mod tests {
         );
         assert!(e < 3e-5, "gain_to_db abs err {e}");
         assert_eq!(gain_to_db(0.0), gain_to_db(1e-6));
+    }
+
+    fn sin_turns_ref(x: f64) -> f64 {
+        (core::f64::consts::TAU * x).sin()
+    }
+
+    #[test]
+    fn sin_cos_bound() {
+        let e = max_abs_err(sin_turns, sin_turns_ref, sweep(-4.0, 4.0, 1_000_000));
+        assert!(e < 3e-7, "sin err {e}");
+        let e = max_abs_err(
+            cos_turns,
+            |x| sin_turns_ref(x + 0.25),
+            sweep(-4.0, 4.0, 1_000_000),
+        );
+        assert!(e < 3e-7, "cos err {e}");
+        // Far from zero: the reduction is still exact.
+        let far = sweep(0.0, 1.0, 10_000).map(|x| x + 3_000_000.0);
+        let e = max_abs_err(sin_turns, sin_turns_ref, far);
+        assert!(e < 3e-7, "sin far err {e}");
+    }
+
+    #[test]
+    fn sin_is_odd_bounded_and_exact_at_half_turns() {
+        for x in sweep(-3.0, 3.0, 100_000) {
+            let s = sin_turns(x);
+            assert_eq!(sin_turns(-x), -s, "{x}");
+            assert!(s.abs() <= 1.0, "{x}");
+        }
+        for k in -8..=8 {
+            assert_eq!(sin_turns(k as f32 * 0.5), 0.0);
+        }
+        assert_eq!(cos_turns(0.0), 0.999_999_94);
+    }
+
+    #[test]
+    fn power_to_db_bound() {
+        let xs = sweep(-39.0, 20.0, 200_000).map(f32::exp2);
+        let e = max_abs_err(power_to_db, |p| 10.0 * p.log10(), xs);
+        assert!(e < 2e-5, "power_to_db err {e}");
+        assert!((power_to_db(0.0) + 120.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn tan_pi_bound() {
+        let e = max_rel_err(
+            tan_pi,
+            |x| (core::f64::consts::PI * x).tan(),
+            sweep(1e-4, 0.49, 1_000_000),
+        );
+        assert!(e < 1.5e-6, "tan rel err {e}");
+        assert_eq!(tan_pi(0.0), 0.0);
+        assert_eq!(tan_pi(0.7), tan_pi(0.49), "clamped");
+    }
+}
+
+/// Proofs over every f32 input (`cargo kani -p euterpe_core`).
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    // `tanh` is proven bounded and odd in steps: one proof over both the
+    // polynomial and the division is too large for the solver.
+
+    /// Step 1: `e^(2a) >= 1` for `a >= 0`, from the `exp2` that computes it.
+    #[kani::proof]
+    fn exp2_of_non_negative_is_at_least_one() {
+        let x: f32 = kani::any();
+        kani::assume(x >= 0.0);
+        let y = exp2(x);
+        assert!(y >= 1.0 && y.is_finite());
+    }
+
+    /// Step 2: for every finite `e >= 1`, `1 - 2 / (e + 1)` is in `[0, 1]`.
+    #[kani::proof]
+    fn tanh_from_exp_is_in_unit_range() {
+        let e: f32 = kani::any();
+        kani::assume(e >= 1.0 && e.is_finite());
+        let y = tanh_from_exp(e);
+        assert!((0.0..=1.0).contains(&y));
+    }
+
+    /// Step 3: the sign is applied by `copysign` to a value computed from
+    /// `|x|` alone, and `|-x|` is `|x|` bit for bit, so `tanh(-x) == -tanh(x)`
+    /// exactly whenever the magnitude `y` is not NaN.
+    #[kani::proof]
+    fn sign_step_is_odd() {
+        let x: f32 = kani::any();
+        let y: f32 = kani::any();
+        kani::assume(!x.is_nan() && !y.is_nan() && y >= 0.0);
+        assert!((-x).abs().to_bits() == x.abs().to_bits());
+        assert!(y.copysign(-x).to_bits() == (-y.copysign(x)).to_bits());
+    }
+
+    /// With steps 1 and 2, the saturated branch: `tanh_magnitude` is in
+    /// `[0, 1]` for every `a >= 0` (NaN-free).
+    #[kani::proof]
+    fn tanh_magnitude_saturates_to_one() {
+        let a: f32 = kani::any();
+        kani::assume(a >= 9.0);
+        assert!(tanh_magnitude(a) == 1.0);
+    }
+
+    /// `exp2` (and so `db_to_gain`) never overflows its exponent arithmetic
+    /// and returns a finite, positive number for every non-NaN input.
+    #[kani::proof]
+    fn exp2_is_finite_and_positive() {
+        let x: f32 = kani::any();
+        kani::assume(!x.is_nan());
+        let y = exp2(x);
+        assert!(y.is_finite());
+        assert!(y > 0.0);
     }
 }

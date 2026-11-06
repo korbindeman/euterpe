@@ -1,0 +1,22 @@
+# euterpe bench baseline: guest instructions per block on qemu mps2-an500.
+# Regenerate with `just bench-baseline` after an intended change.
+demo.gain static 151
+demo.gain automated 208
+demo.drive static 1701
+demo.drive automated 1545.484375
+demo.drive4x static 19829
+demo.drive4x automated 19259.90625
+demo.cab static 23392.125
+demo.cab automated 23412.125
+demo.rig static 43213.125
+demo.rig automated 42665.03125
+pedal.fuzz static 25778.3125
+pedal.fuzz automated 24574.59375
+pedal.tremolo static 1993
+pedal.tremolo automated 1602
+pedal.delay static 1421
+pedal.delay automated 1504
+pedal.eq static 2087
+pedal.eq automated 2188
+preamp.channel static 78411.75
+preamp.channel automated 51951.75

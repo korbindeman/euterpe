@@ -117,8 +117,8 @@ All combinators are generic structs that implement `Processor`.
 
 | Combinator | Purpose |
 | --- | --- |
-| `#[derive(Chain)]` on a struct | Runs fields in declaration order. Generates `process`, `reset`, `prepare`, latency sum and the nested param tree. Fields stay directly accessible. |
-| `Oversampled<P, const F: usize>` | Polyphase half-band up, `P` at `F`× rate, half-band down. `F` ∈ {2, 4, 8}. Reports its filter latency. |
+| `#[derive(Chain)]` on a struct | Runs fields in declaration order. Generates `process`, `reset`, `prepare`, latency sum and the nested param tree (`<Name>Params`, or `#[chain(params = X)]`). Fields stay directly accessible. *Done.* |
+| `Oversampled2<P>`, `Oversampled4<P>`, `Oversampled8<P>` | Polyphase half-band up, `P` at 2, 4 or 8× rate, half-band down. Nested `Oversample2x<P, N>` stages (stable Rust has no type-level `F` → stages mapping). Reports its exact filter latency. *Done in `euterpe_dsp`.* |
 | `Parallel<A, B, M>` | Splits, processes both, recombines with mixer `M`. Inserts delay compensation from `latency()`. |
 | `Bypass<P>` | Click-free crossfade between `P` and dry, latency-compensated. |
 | `Switch<(A, B, ...)>` | Selects one of several processors, e.g. amp types. Static dispatch, crossfade on change. |
@@ -131,7 +131,7 @@ Example device graph:
 #[derive(Chain)]
 pub struct Combo {
     pub input: InputStage,
-    pub amp: Switch<(Oversampled<Champ, 4>, Oversampled<TweedDeluxe, 4>, Oversampled<Ac30, 4>)>,
+    pub amp: Switch<(Oversampled4<Champ>, Oversampled4<TweedDeluxe>, Oversampled4<Ac30>)>,
     pub cab: Convolver<2048>,
     pub reverb: SpringReverb,
     pub out: OutputStage,
@@ -164,6 +164,8 @@ These apply to everything in the hot path. They are enforced in review and by `e
 
 ## Platforms
 
+*Implemented so far as `fn run<D: Device>(self) -> !`; controls are a const `Device::PANEL` (see `euterpe_core::panel`) that each platform reads its own way (the Daisy: ADC and GPIO in `euterpe_daisy::controls`). `Storage` comes when a platform needs it.*
+
 ```rust
 pub trait Platform {
     type Controls: Controls;   // pots, buttons, encoders, LEDs
@@ -190,9 +192,10 @@ pub struct ComboDevice;
 impl Device for ComboDevice {
     type Graph = Combo;
     const PANEL: &'static [Binding] = &[
-        pot("knob1", "amp.gain", Taper::Audio),
-        pot("knob2", "amp.tone"),
-        button("button1", "amp.type", Action::Cycle),
+        pot(0, "amp.gain"),      // the param's own taper maps the travel
+        pot(1, "amp.tone"),
+        button(0, "amp.type"),   // steps a choice, flips a toggle
+        switch(1, "amp.bright"), // a maintained switch holds a toggle
     ];
     const BUDGET_CYCLES_PER_BLOCK: u32 = 200_000; // ~70% of 480 MHz × 0.67 ms
 }
@@ -206,7 +209,7 @@ impl Device for ComboDevice {
 | --- | --- |
 | `euterpe render <device> --in x.wav --set k=v --out y.wav` | Offline render with param overrides |
 | `euterpe analyze <device> <suite>` | Frequency response, THD vs level, aliasing metric (sine sweeps), null test against a reference. JSON output. |
-| `euterpe bench <device>` | Cycles per block per processor. Host: relative estimate. Device: DWT cycle counter over defmt/RTT. Flags regressions against a stored baseline. |
+| `euterpe bench [<device>...]` | Instructions per block per device on an emulated Cortex-M7 (QEMU `mps2-an500` with an instruction-counting plugin), estimated cycles against the device's budget, and hot-path checks of the compiled `process` (no panics, soft float, f64 or allocation). Flags regressions against a stored baseline. On the board: DWT cycles per block, to calibrate the estimate. |
 | `euterpe schema <device>` | Dump the param tree as JSON |
 | `euterpe flash <device>` | Build and flash over DFU or probe-rs |
 
@@ -256,11 +259,13 @@ specs/
 
 ## Migration from the current repo
 
-1. **Core first.** Create `core` with `Processor`, `Block`, `Ctx`, `PerSample`, and port `params` to the derive-based schema. *Done as `euterpe_core`. Params use the `params!` macro for now; `#[derive(Params)]` and `#[derive(Chain)]` arrive with the `macros` crate.*
-2. **Offline platform and `euterpe render` / `analyze`.** Everything after this is verified through them. *`render`, `schema`, `devices` and the generic `check_processor` invariants are done (the CLI is the `euterpe_cli` crate rather than an xtask). `analyze` is next.*
+1. **Core first.** Create `core` with `Processor`, `Block`, `Ctx`, `PerSample`, and port `params` to the derive-based schema. *Done as `euterpe_core`. `#[derive(Params)]` and `#[derive(Chain)]` live in `euterpe_macros` and are re-exported from `euterpe_core`; `params!` remains for flat sets. Nested schemas are composed in `const` (ids prefixed by field name, duplicates rejected at compile time), so a chain's schema is still one `&'static` slice. `demo.rig` (drive4x into cab) is a chain; it costs exactly the sum of its stages.*
+2. **Offline platform and `euterpe render` / `analyze`.** Everything after this is verified through them. *`render`, `schema`, `devices` and the generic `check_processor` invariants are done (the CLI is the `euterpe_cli` crate rather than an xtask). `analyze` is done too: `response`, `thd`, `aliasing` and `null` live in `euterpe_offline::analyze` and are exposed as `euterpe analyze <device> <suite>`. Baseline for `Oversampled`: unoversampled `demo.drive` at drive 24 dB and -6 dBFS aliases at -27.7 dB (2 kHz), -13.1 dB (6 kHz) and -8.3 dB (10 kHz), relative to the fundamental.*
+   - *Pulled forward: `euterpe bench` (QEMU instruction counts, hot-path checks, baseline) and a minimal `Platform` trait with `euterpe_daisy`, which runs a device on the Seed and measures each block with DWT. The firmware target is built with `target-cpu=cortex-m7`, so f64 is hardware, not soft float. Still to do: calibrating cycles per instruction on the board, and panel controls.*
+   - *`euterpe_desktop` exists too: any registered device through cpal, with an egui panel generated from the schema (sliders move in normalized position, so tapers apply), lock-free parameter slots, and devices switched at runtime behind one virtual call per block. Devices are listed once, in `euterpe_registry`. `Device::Graph` is now `Send + 'static` so a host can move it to its audio thread.*
 3. **Wrap the existing processors** in `PerSample` so the preamp keeps working. Move the preamp into `devices/preamp`.
-4. **Port `CabSim`** to a native block `Convolver`: real FFT, work amortized across blocks, an optional direct-form head for low latency.
-5. **`Oversampled` and `fastmath`**, verified with the aliasing metric.
+4. **Port `CabSim`** to a native block `Convolver`: real FFT, work amortized across blocks, an optional direct-form head for low latency. *Done as `euterpe_dsp::Convolver<P>`: uniform 32-tap partitions, so every block does the same work and latency is zero (the legacy `CabSim` had 256). It nulls against `CabSim` at -130 dB. 2048 taps (`demo.cab`) cost 31k instructions per block (16% of the budget), about two thirds in the per-bin multiply-adds. A two-stage scheme (32-tap head, 256-tap tail spread over 8 blocks) would cut that by roughly 3x if a device needs the room.*
+5. **`Oversampled` and `fastmath`**, verified with the aliasing metric. *`Oversampled` done: `demo.drive4x` (drive 24 dB, -6 dBFS) has audible aliasing of -55 dB at 6 kHz and -39 dB at 10 kHz, against -13 and -9 dB unoversampled; 8x reaches -110 and -70 dB. 4x costs about 20k instructions per block (10% of the budget), most of it in the first half-band stage.*
 6. **Amp processors:** Champ, then Tweed Deluxe, then AC30, then generalize into the configurable amp engine.
 7. **`devices/combo`** on the Daisy, with `bench` numbers against its budget.
 

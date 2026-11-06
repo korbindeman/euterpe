@@ -8,14 +8,9 @@ use preamp::dsp::Process;
 
 /// Pending IR to be loaded into a channel.
 /// The UI thread sets this, and the audio thread takes it.
+#[derive(Default)]
 pub struct PendingIr {
     pub ir: Option<Vec<f32>>,
-}
-
-impl Default for PendingIr {
-    fn default() -> Self {
-        Self { ir: None }
-    }
 }
 
 /// Shared state between UI and audio threads.
@@ -157,19 +152,17 @@ impl PreampProcessor {
 impl AudioProcessor for PreampProcessor {
     fn process_buffer(&mut self, input: &[[f32; 2]], output: &mut [[f32; 2]]) {
         // Check for pending IRs (separate locks, quick check)
-        if let Ok(mut pending) = self.state.ch1_pending_ir.try_lock() {
-            if let Some(ir) = pending.ir.take() {
-                if let Ok(mut ch1) = self.state.ch1.try_lock() {
-                    ch1.set_ir(&ir);
-                }
-            }
+        if let Ok(mut pending) = self.state.ch1_pending_ir.try_lock()
+            && let Some(ir) = pending.ir.take()
+            && let Ok(mut ch1) = self.state.ch1.try_lock()
+        {
+            ch1.set_ir(&ir);
         }
-        if let Ok(mut pending) = self.state.ch2_pending_ir.try_lock() {
-            if let Some(ir) = pending.ir.take() {
-                if let Ok(mut ch2) = self.state.ch2.try_lock() {
-                    ch2.set_ir(&ir);
-                }
-            }
+        if let Ok(mut pending) = self.state.ch2_pending_ir.try_lock()
+            && let Some(ir) = pending.ir.take()
+            && let Ok(mut ch2) = self.state.ch2.try_lock()
+        {
+            ch2.set_ir(&ir);
         }
 
         let mono = self.state.mono_mode.load(Ordering::Relaxed);

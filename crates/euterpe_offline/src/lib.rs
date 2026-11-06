@@ -8,7 +8,9 @@
 //! - [`render()`]: block rendering with latency compensation
 //! - [`signal`]: test signals (impulse, sine, log sweep, noise)
 //! - [`check`]: invariant checks every processor should pass
+//! - [`analyze`]: frequency response, THD, aliasing and null measurements
 
+pub mod analyze;
 pub mod check;
 pub mod fpu;
 pub mod render;

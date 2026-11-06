@@ -4,4 +4,8 @@ description = "Core traits and primitives for Euterpe: block processing, paramet
 version.workspace = true
 edition.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
+euterpe_macros = { path = "../euterpe_macros" }

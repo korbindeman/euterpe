@@ -4,9 +4,15 @@ description = "Demo Euterpe devices: a gain stage and a tanh drive. Small, compl
 version.workspace = true
 edition.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 euterpe_core = { path = "../../crates/euterpe_core" }
+euterpe_dsp = { path = "../../crates/euterpe_dsp" }
+euterpe_irs = { path = "../../crates/euterpe_irs" }
 
 [dev-dependencies]
+dsp = { path = "../../crates/dsp" }
 euterpe_offline = { path = "../../crates/euterpe_offline" }
 euterpe_fixtures = { path = "../../crates/euterpe_fixtures" }

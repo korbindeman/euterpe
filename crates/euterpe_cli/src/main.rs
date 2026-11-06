@@ -3,6 +3,8 @@
 //! All commands print JSON to stdout, so agents and scripts can parse them.
 //! Errors go to stderr with a non-zero exit code.
 
+mod analyze;
+mod bench;
 mod json;
 mod registry;
 
@@ -30,6 +32,8 @@ USAGE:
         Render audio through the device and print a level summary.
         Each input channel runs through its own instance of the device.
 
+{ANALYZE}
+{BENCH}
 RENDER OPTIONS:
     --in <file.wav>       Input file (any PCM or float WAV).
     --gen <signal>        Generate input instead: impulse | silence | noise
@@ -47,14 +51,27 @@ EXAMPLES:
     euterpe schema demo.drive
     euterpe render demo.drive --gen sine:220 --set drive=24 --out drive.wav
     euterpe render demo.gain --in guitar.wav --set gain=-12 --out quiet.wav
+    euterpe analyze demo.drive aliasing --set drive=24
+    euterpe analyze demo.gain response --set gain=-6
+    euterpe bench demo.drive --baseline benches/qemu-baseline.txt
 ";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    match run(&args) {
-        Ok(json) => {
+    let result = if args.first().map(String::as_str) == Some("bench") {
+        bench::Options::parse(&args[1..]).and_then(|opts| bench::run(&opts))
+    } else {
+        run(&args).map(|json| (json, true))
+    };
+    match result {
+        Ok((json, pass)) => {
             println!("{}", json.render());
-            ExitCode::SUCCESS
+            // A bench that ran but found regressions or hot-path problems.
+            if pass {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            }
         }
         Err(e) => {
             eprintln!("error: {e}");
@@ -66,7 +83,11 @@ fn main() -> ExitCode {
 fn run(args: &[String]) -> Result<Json, String> {
     match args.first().map(String::as_str) {
         None | Some("help" | "-h" | "--help") => {
-            print!("{HELP}");
+            print!(
+                "{}",
+                HELP.replace("{ANALYZE}", analyze::HELP)
+                    .replace("{BENCH}", bench::HELP)
+            );
             std::process::exit(0);
         }
         Some("devices") => Ok(Json::Arr(
@@ -91,11 +112,20 @@ fn run(args: &[String]) -> Result<Json, String> {
             let job = RenderJob::parse(&args[2..])?;
             registry::visit(name, job).ok_or_else(|| unknown_device(name))?
         }
-        Some(other) => Err(format!("unknown command `{other}`; run `euterpe --help`")),
+        Some("analyze") => {
+            let name = args
+                .get(1)
+                .ok_or("usage: euterpe analyze <device> <suite> ... (see --help)")?;
+            let job = analyze::AnalyzeJob::parse(&args[2..])?;
+            registry::visit(name, job).ok_or_else(|| unknown_device(name))?
+        }
+        Some(other) => Err(format!(
+            "unknown command `{other}`; commands: devices, schema, render, analyze, bench"
+        )),
     }
 }
 
-fn unknown_device(name: &str) -> String {
+pub(crate) fn unknown_device(name: &str) -> String {
     let names: Vec<&str> = registry::DEVICES.iter().map(|(n, _)| *n).collect();
     format!("unknown device `{name}`; available: {}", names.join(", "))
 }
@@ -114,8 +144,31 @@ impl Visitor for SchemaJob {
             ("device", Json::str(D::NAME)),
             ("description", Json::str(D::DESCRIPTION)),
             ("params", schema_json::<<D::Graph as Processor>::Params>()),
+            ("panel", panel_json(D::PANEL)),
         ])
     }
+}
+
+/// The hardware controls: `{"control": "pot", "index": 0, "param": "drive"}`.
+fn panel_json(panel: &[euterpe_core::panel::Binding]) -> Json {
+    use euterpe_core::panel::Control;
+    Json::Arr(
+        panel
+            .iter()
+            .map(|b| {
+                let (kind, index) = match b.control {
+                    Control::Pot(i) => ("pot", i),
+                    Control::Switch(i) => ("switch", i),
+                    Control::Button(i) => ("button", i),
+                };
+                Json::Obj(vec![
+                    ("control", Json::str(kind)),
+                    ("index", Json::num(f32::from(index))),
+                    ("param", Json::str(b.param)),
+                ])
+            })
+            .collect(),
+    )
 }
 
 fn schema_json<P: ParamSet>() -> Json {
@@ -166,7 +219,7 @@ fn schema_json<P: ParamSet>() -> Json {
     )
 }
 
-fn value_json(kind: &ParamKind, value: ParamValue) -> Json {
+pub(crate) fn value_json(kind: &ParamKind, value: ParamValue) -> Json {
     match (kind, value) {
         (_, ParamValue::Float(v)) => Json::num(v),
         (_, ParamValue::Bool(b)) => Json::Bool(b),
@@ -249,8 +302,15 @@ impl RenderJob {
                 (audio, path)
             }
             (None, Some(spec)) => {
-                let len = (seconds * rate as f64).round() as usize;
-                let amp = 10f32.powf(level_db as f32 / 20.0);
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    clippy::cast_sign_loss,
+                    reason = "seconds is a validated, non-negative CLI value; level is a dB value well within f32"
+                )]
+                let (len, amp) = (
+                    (seconds * f64::from(rate)).round() as usize,
+                    10f32.powf(level_db as f32 / 20.0),
+                );
                 (
                     Audio::mono(rate, generate(&spec, amp, len, rate)?),
                     format!("gen:{spec}"),
@@ -270,7 +330,7 @@ impl RenderJob {
     }
 }
 
-fn parse_num<T: std::str::FromStr>(flag: &str, s: &str) -> Result<T, String> {
+pub(crate) fn parse_num<T: std::str::FromStr>(flag: &str, s: &str) -> Result<T, String> {
     s.parse()
         .map_err(|_| format!("{flag}: `{s}` is not a number"))
 }
@@ -280,7 +340,7 @@ fn generate(spec: &str, amp: f32, len: usize, rate: u32) -> Result<Vec<f32>, Str
     let hz = |s: &str| -> Result<f64, String> {
         s.parse::<f64>()
             .ok()
-            .filter(|f| *f > 0.0 && *f < rate as f64 / 2.0)
+            .filter(|f| *f > 0.0 && *f < f64::from(rate) / 2.0)
             .ok_or_else(|| format!("`{s}` is not a frequency between 0 and {} Hz", rate / 2))
     };
     Ok(match parts.as_slice() {
@@ -312,8 +372,13 @@ impl Visitor for RenderJob {
         }
 
         let rate = self.input.sample_rate;
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "tail_seconds is a validated, non-negative CLI value"
+        )]
         let opts = RenderOptions {
-            tail: (self.tail_seconds * rate as f64).round() as usize,
+            tail: (self.tail_seconds * f64::from(rate)).round() as usize,
             ..RenderOptions::new(rate)
         };
         let mut latency = 0;
@@ -367,8 +432,8 @@ fn levels(audio: &Audio) -> Json {
     let samples = audio.channels.iter().flatten();
     let (mut peak, mut sum_sq, mut n) = (0f64, 0f64, 0usize);
     for &s in samples {
-        peak = peak.max((s as f64).abs());
-        sum_sq += (s as f64) * (s as f64);
+        peak = peak.max(f64::from(s).abs());
+        sum_sq += f64::from(s) * f64::from(s);
         n += 1;
     }
     let db = |x: f64| {
@@ -407,6 +472,7 @@ mod tests {
         let out = run(&args("schema demo.drive")).unwrap().render();
         assert!(out.contains("\"id\": \"drive\""));
         assert!(out.contains("\"unit\": \"dB\""));
+        assert!(out.contains("\"control\": \"pot\""), "{out}");
     }
 
     #[test]
@@ -441,5 +507,48 @@ mod tests {
         ))
         .unwrap_err();
         assert!(err.contains("drive, level"), "{err}");
+    }
+
+    #[test]
+    fn analyze_response_reports_the_gain() {
+        let out = run(&args(
+            "analyze demo.gain response --set gain=-6 --freq 1000",
+        ))
+        .unwrap()
+        .render();
+        assert!(out.contains("\"gain_db\": -6"), "{out}");
+    }
+
+    #[test]
+    fn analyze_null_measures_a_small_gain_error() {
+        let dir = std::env::temp_dir().join(format!("euterpe-cli-null-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let input = dir.join("in.wav");
+        let reference = dir.join("ref.wav");
+        let noise = signal::noise(0.5, 4_800, 3);
+        let half: Vec<f32> = noise.iter().map(|s| s * 0.5).collect();
+        wav::write(&input, &Audio::mono(48_000, noise), Encoding::Float32).unwrap();
+        wav::write(&reference, &Audio::mono(48_000, half), Encoding::Float32).unwrap();
+        let cmd = format!(
+            "analyze demo.gain null --set gain=-6 --in {} --reference {}",
+            input.display(),
+            reference.display()
+        );
+        let out = run(&args(&cmd)).unwrap().render();
+        let rms = out
+            .lines()
+            .find_map(|l| l.trim().strip_prefix("\"residual_rms_db\": "))
+            .and_then(|v| v.trim_end_matches(',').parse::<f64>().ok())
+            .unwrap();
+        // -6 dB is a gain of 0.50119, against a reference at exactly 0.5:
+        // the residual is 0.00119 / 0.5, or -52.5 dB.
+        assert!((rms + 52.5).abs() < 0.1, "{out}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn analyze_rejects_unknown_suites() {
+        let err = run(&args("analyze demo.gain loudness")).unwrap_err();
+        assert!(err.contains("response, thd, aliasing, null"), "{err}");
     }
 }

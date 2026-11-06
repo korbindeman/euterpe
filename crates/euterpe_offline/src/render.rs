@@ -102,7 +102,7 @@ mod tests {
             self.line.fill(0.0);
             self.pos = 0;
         }
-        fn process(&mut self, buf: &mut Block, _: &()) {
+        fn process(&mut self, buf: &mut Block, (): &()) {
             for s in buf.iter_mut() {
                 let out = self.line[self.pos];
                 self.line[self.pos] = *s;

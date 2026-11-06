@@ -75,6 +75,7 @@ impl ParamKind {
     }
 
     /// Set the unit label of a float parameter. No effect on other kinds.
+    #[must_use]
     pub const fn unit(self, unit: &'static str) -> Self {
         match self {
             ParamKind::Float {
@@ -97,6 +98,7 @@ impl ParamKind {
     }
 
     /// Set the taper of a float parameter. No effect on other kinds.
+    #[must_use]
     pub const fn taper(self, taper: Taper) -> Self {
         match self {
             ParamKind::Float {
@@ -119,6 +121,7 @@ impl ParamKind {
     }
 
     /// Set the smoothing time of a float parameter. No effect on other kinds.
+    #[must_use]
     pub const fn smooth_ms(self, smooth_ms: f32) -> Self {
         match self {
             ParamKind::Float {
@@ -158,15 +161,15 @@ impl ParamKind {
                 },
                 ParamValue::Float(v),
             ) => {
-                let v = v.clamp(min, max);
+                let v = clamp_to(v, min, max);
                 match taper {
                     Taper::Linear => (v - min) / (max - min),
                     Taper::Exponential => fastmath::log2(v / min) / fastmath::log2(max / min),
                 }
             }
-            (ParamKind::Toggle { .. }, ParamValue::Bool(b)) => b as u8 as f32,
+            (ParamKind::Toggle { .. }, ParamValue::Bool(b)) => f32::from(u8::from(b)),
             (ParamKind::Choice { options, .. }, ParamValue::Choice(i)) if options.len() > 1 => {
-                i as f32 / (options.len() - 1) as f32
+                f32::from(i) / (options.len() - 1) as f32
             }
             _ => 0.0,
         }
@@ -185,7 +188,13 @@ impl ParamKind {
             ParamKind::Toggle { .. } => ParamValue::Bool(n >= 0.5),
             ParamKind::Choice { options, .. } => {
                 let last = options.len().saturating_sub(1) as f32;
-                ParamValue::Choice((n * last + 0.5) as u8)
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    clippy::cast_sign_loss,
+                    reason = "n is clamped to [0, 1], so the result is in 0..=last; `as` saturates anyway"
+                )]
+                let index = (n * last + 0.5) as u8;
+                ParamValue::Choice(index)
             }
         }
     }
@@ -213,7 +222,9 @@ impl ParamKind {
             },
             ParamKind::Choice { options, .. } => {
                 if let Some(i) = options.iter().position(|o| o.eq_ignore_ascii_case(s)) {
-                    return Ok(ParamValue::Choice(i as u8));
+                    return u8::try_from(i)
+                        .map(ParamValue::Choice)
+                        .map_err(|_| ParamError::Parse);
                 }
                 match s.parse::<u8>() {
                     Ok(i) if (i as usize) < options.len() => Ok(ParamValue::Choice(i)),
@@ -318,6 +329,15 @@ pub trait ParamField: Sized {
     fn assign(&mut self, kind: &ParamKind, value: ParamValue) -> Result<(), ParamError>;
 }
 
+/// `v` limited to `min..=max`, without `f32::clamp`'s panic for bounds out
+/// of order. That panic formats both bounds, which links about 15 KB of
+/// float formatting into firmware; here the bounds come from a schema at
+/// run time, so it can't be folded away.
+#[inline]
+fn clamp_to(v: f32, min: f32, max: f32) -> f32 {
+    v.max(min).min(max)
+}
+
 impl ParamField for f32 {
     fn default_for(kind: &ParamKind) -> Self {
         match *kind {
@@ -336,7 +356,7 @@ impl ParamField for f32 {
                 if !v.is_finite() {
                     return Err(ParamError::Invalid);
                 }
-                *self = v.clamp(min, max);
+                *self = clamp_to(v, min, max);
                 Ok(())
             }
             _ => Err(ParamError::TypeMismatch),
@@ -390,6 +410,155 @@ impl ParamField for u8 {
             }
             _ => Err(ParamError::TypeMismatch),
         }
+    }
+}
+
+/// Compile-time composition of schemas, used by `#[derive(Params)]` and
+/// `#[derive(Chain)]` to build one flat schema from nested ones.
+///
+/// Nested ids get their field's name as a prefix (`"amp.drive"`). The
+/// prefixed strings are built in a `const` byte buffer, so the result is
+/// still a `&'static [ParamDesc]` with no runtime work.
+///
+/// Two parameters with the same id are a compile error:
+///
+/// ```compile_fail
+/// use euterpe_core::{ParamKind, ParamSet, Params};
+///
+/// #[derive(Params, Clone)]
+/// struct Clash {
+///     #[param(id = "x", label = "A", kind = ParamKind::toggle(false))]
+///     a: bool,
+///     #[param(id = "x", label = "B", kind = ParamKind::toggle(false))]
+///     b: bool,
+/// }
+/// let _ = Clash::SCHEMA;
+/// ```
+pub mod compose {
+    use super::{ParamDesc, ParamKind};
+
+    /// One piece of a composed schema: `schema`'s ids, each prefixed with
+    /// `prefix` and a dot (no prefix when `prefix` is empty).
+    pub struct Part {
+        pub prefix: &'static str,
+        pub schema: &'static [ParamDesc],
+    }
+
+    const fn prefix_len(prefix: &str) -> usize {
+        if prefix.is_empty() {
+            0
+        } else {
+            prefix.len() + 1
+        }
+    }
+
+    /// Parameters in all parts.
+    pub const fn count(parts: &[Part]) -> usize {
+        let mut n = 0;
+        let mut i = 0;
+        while i < parts.len() {
+            n += parts[i].schema.len();
+            i += 1;
+        }
+        n
+    }
+
+    /// Bytes of all prefixed ids together.
+    pub const fn ids_len(parts: &[Part]) -> usize {
+        let mut n = 0;
+        let mut i = 0;
+        while i < parts.len() {
+            let mut j = 0;
+            while j < parts[i].schema.len() {
+                n += prefix_len(parts[i].prefix) + parts[i].schema[j].id.len();
+                j += 1;
+            }
+            i += 1;
+        }
+        n
+    }
+
+    const fn copy(dst: &mut [u8], at: usize, src: &[u8]) -> usize {
+        let mut k = 0;
+        while k < src.len() {
+            dst[at + k] = src[k];
+            k += 1;
+        }
+        at + k
+    }
+
+    /// All prefixed ids, back to back. `T` must be [`ids_len`].
+    pub const fn ids<const T: usize>(parts: &[Part]) -> [u8; T] {
+        let mut buf = [0u8; T];
+        let mut at = 0;
+        let mut i = 0;
+        while i < parts.len() {
+            let mut j = 0;
+            while j < parts[i].schema.len() {
+                if !parts[i].prefix.is_empty() {
+                    at = copy(&mut buf, at, parts[i].prefix.as_bytes());
+                    at = copy(&mut buf, at, b".");
+                }
+                at = copy(&mut buf, at, parts[i].schema[j].id.as_bytes());
+                j += 1;
+            }
+            i += 1;
+        }
+        assert!(at == T, "ids buffer has the wrong length");
+        buf
+    }
+
+    const fn eq(a: &[u8], b: &[u8]) -> bool {
+        if a.len() != b.len() {
+            return false;
+        }
+        let mut k = 0;
+        while k < a.len() {
+            if a[k] != b[k] {
+                return false;
+            }
+            k += 1;
+        }
+        true
+    }
+
+    /// The composed schema, ids pointing into `ids`. `L` must be [`count`].
+    /// Fails to compile if two parameters end up with the same id.
+    pub const fn descs<const L: usize>(parts: &[Part], ids: &'static [u8]) -> [ParamDesc; L] {
+        let mut out = [ParamDesc {
+            id: "",
+            label: "",
+            kind: ParamKind::toggle(false),
+        }; L];
+        let mut rest = ids;
+        let mut n = 0;
+        let mut i = 0;
+        while i < parts.len() {
+            let mut j = 0;
+            while j < parts[i].schema.len() {
+                let d = parts[i].schema[j];
+                let (id, tail) = rest.split_at(prefix_len(parts[i].prefix) + d.id.len());
+                rest = tail;
+                let mut k = 0;
+                while k < n {
+                    assert!(!eq(out[k].id.as_bytes(), id), "duplicate parameter id");
+                    k += 1;
+                }
+                let Ok(id) = core::str::from_utf8(id) else {
+                    panic!("parameter id is not UTF-8");
+                };
+                out[n] = ParamDesc {
+                    id,
+                    label: d.label,
+                    kind: d.kind,
+                };
+                n += 1;
+                j += 1;
+            }
+            i += 1;
+        }
+        assert!(n == L, "schema has the wrong length");
+        out
     }
 }
 
@@ -451,7 +620,46 @@ macro_rules! params {
     };
 }
 
+/// Proofs (`cargo kani -p euterpe_core`).
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    const OPTIONS: [&str; 8] = ["a", "b", "c", "d", "e", "f", "g", "h"];
+
+    /// A pot reading, any f32 at all (NaN, infinities, out of range), maps
+    /// to a valid choice index, which `set` then accepts.
+    #[kani::proof]
+    fn any_normalized_reading_is_a_valid_choice() {
+        let len: usize = kani::any();
+        kani::assume((1..=OPTIONS.len()).contains(&len));
+        let kind = ParamKind::choice(&OPTIONS[..len], 0);
+        let ParamValue::Choice(i) = kind.from_normalized(kani::any()) else {
+            panic!("a choice maps to a choice");
+        };
+        assert!(usize::from(i) < len);
+        let mut field = 0u8;
+        assert!(field.assign(&kind, ParamValue::Choice(i)).is_ok());
+    }
+
+    /// Whatever value arrives, a float field ends up inside its range or
+    /// the value is rejected; it is never left out of range or NaN.
+    #[kani::proof]
+    fn float_fields_stay_in_range() {
+        let kind = ParamKind::float(-24.0, 6.0, 0.0);
+        let mut field = 0.0f32;
+        let v: f32 = kani::any();
+        let ok = field.assign(&kind, ParamValue::Float(v)).is_ok();
+        assert!((-24.0..=6.0).contains(&field));
+        assert!(ok == v.is_finite());
+    }
+}
+
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "tests compare exact, bit-identical results on purpose"
+)]
 mod tests {
     use super::*;
 

@@ -1,0 +1,26 @@
+[package]
+name = "euterpe_bench_daisy"
+description = "Bench firmware for the Daisy Seed: the QEMU bench's scenarios, measured in DWT cycles and reported over RTT. Run with `just board-bench` (needs a debug probe)."
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "euterpe_bench_daisy"
+test = false
+bench = false
+
+[dependencies]
+euterpe_core = { path = "../euterpe_core" }
+euterpe_bench = { path = "../euterpe_bench" }
+euterpe_daisy = { path = "../euterpe_daisy" }
+euterpe_registry = { path = "../euterpe_registry" }
+daisy = { version = "0.11.0", features = ["seed_1_2"] }
+cortex-m = "0.7"
+cortex-m-rt = "0.7"
+cortex-m-semihosting = "0.5"
+rtt-target = "0.6"
+stm32h7xx-hal = { version = "0.16", features = ["stm32h750v", "rt", "revision_v"] }
