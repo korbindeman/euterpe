@@ -164,6 +164,8 @@ These apply to everything in the hot path. They are enforced in review and by `e
 
 ## Platforms
 
+*Implemented so far as `fn run<D: Device>(self) -> !` only; `Controls` and `Storage` come when a platform needs them.*
+
 ```rust
 pub trait Platform {
     type Controls: Controls;   // pots, buttons, encoders, LEDs
@@ -206,7 +208,7 @@ impl Device for ComboDevice {
 | --- | --- |
 | `euterpe render <device> --in x.wav --set k=v --out y.wav` | Offline render with param overrides |
 | `euterpe analyze <device> <suite>` | Frequency response, THD vs level, aliasing metric (sine sweeps), null test against a reference. JSON output. |
-| `euterpe bench <device>` | Cycles per block per processor. Host: relative estimate. Device: DWT cycle counter over defmt/RTT. Flags regressions against a stored baseline. |
+| `euterpe bench [<device>...]` | Instructions per block per device on an emulated Cortex-M7 (QEMU `mps2-an500` with an instruction-counting plugin), estimated cycles against the device's budget, and hot-path checks of the compiled `process` (no panics, soft float, f64 or allocation). Flags regressions against a stored baseline. On the board: DWT cycles per block, to calibrate the estimate. |
 | `euterpe schema <device>` | Dump the param tree as JSON |
 | `euterpe flash <device>` | Build and flash over DFU or probe-rs |
 
@@ -258,6 +260,7 @@ specs/
 
 1. **Core first.** Create `core` with `Processor`, `Block`, `Ctx`, `PerSample`, and port `params` to the derive-based schema. *Done as `euterpe_core`. Params use the `params!` macro for now; `#[derive(Params)]` and `#[derive(Chain)]` arrive with the `macros` crate.*
 2. **Offline platform and `euterpe render` / `analyze`.** Everything after this is verified through them. *`render`, `schema`, `devices` and the generic `check_processor` invariants are done (the CLI is the `euterpe_cli` crate rather than an xtask). `analyze` is next.*
+   - *Pulled forward: `euterpe bench` (QEMU instruction counts, hot-path checks, baseline) and a minimal `Platform` trait with `euterpe_daisy`, which runs a device on the Seed and measures each block with DWT. The firmware target is built with `target-cpu=cortex-m7`, so f64 is hardware, not soft float. Still to do: calibrating cycles per instruction on the board, and panel controls.*
 3. **Wrap the existing processors** in `PerSample` so the preamp keeps working. Move the preamp into `devices/preamp`.
 4. **Port `CabSim`** to a native block `Convolver`: real FFT, work amortized across blocks, an optional direct-form head for low latency.
 5. **`Oversampled` and `fastmath`**, verified with the aliasing metric.

@@ -11,6 +11,7 @@
 //! - [`Smoother`]: control-rate smoothing that hands out per-block [`Ramp`]s.
 //! - [`fastmath`]: approximations with documented, tested error bounds.
 //! - [`Device`]: a named, complete signal graph that platforms can run.
+//! - [`Platform`]: something that runs a device (the Daisy, offline, ...).
 
 #![no_std]
 // An unsuffixed float literal falls back to f64, which is soft-float on the
@@ -20,10 +21,12 @@
 pub mod device;
 pub mod fastmath;
 pub mod params;
+pub mod platform;
 pub mod processor;
 pub mod smooth;
 
 pub use device::Device;
 pub use params::{ParamDesc, ParamError, ParamKind, ParamSet, ParamValue};
+pub use platform::Platform;
 pub use processor::{BLOCK, Block, Ctx, PerSample, Processor, SampleProcessor};
 pub use smooth::{Ramp, Smoother};

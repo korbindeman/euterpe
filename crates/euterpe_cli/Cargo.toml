@@ -15,3 +15,4 @@ path = "src/main.rs"
 euterpe_core = { path = "../euterpe_core" }
 euterpe_offline = { path = "../euterpe_offline" }
 euterpe_demo = { path = "../../devices/demo" }
+euterpe_bench = { path = "../euterpe_bench" }

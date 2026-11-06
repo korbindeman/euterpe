@@ -21,11 +21,11 @@ just check
 # Lint, same split (all warnings are errors)
 just clippy
 
-# Run tests (the firmware crates can't build for the host)
-cargo test --workspace --exclude preamp_daisy --exclude daisy_runtime
+# Run tests for every host crate
+just test
 ```
 
-`cargo check --workspace` on the host fails by design: `preamp_daisy` and `daisy_runtime` only build for `thumbv7em-none-eabihf`.
+`cargo check --workspace` on the host fails by design: the firmware crates (`preamp_daisy`, `daisy_runtime`, `euterpe_daisy`, `demo_daisy`, `euterpe_bench_qemu`) only build for `thumbv7em-none-eabihf`. The justfile keeps the lists. The Daisy target builds with `target-cpu=cortex-m7` (`.cargo/config.toml`), which gives hardware f64 and the M7 instruction schedule.
 
 ## Euterpe (toolkit in progress)
 
@@ -35,13 +35,27 @@ This repo is becoming **Euterpe**, a toolkit for building audio hardware. The de
 - **`crates/euterpe_offline`**: WAV I/O, `render` / `render_with` (latency-compensated, deterministic), test signals, and `check::check_processor`.
 - **`crates/euterpe_cli`**: the `euterpe` binary. Devices are registered in `src/registry.rs`.
 - **`devices/demo`**: `demo.gain` and `demo.drive`, the reference examples for writing a processor and a device.
+- **`crates/euterpe_bench`** (`no_std`): the bench harness (`static` and `automated` scenarios), shared by every bench target.
+- **`crates/euterpe_bench_qemu`**: bench firmware for QEMU's `mps2-an500` (a Cortex-M7). Run through `euterpe bench`, never directly.
+- **`crates/euterpe_daisy`**: the Daisy Seed `Platform`. Runs a device on the codec, measures every block with the DWT cycle counter, blinks the LED fast if a block goes over budget.
+- **`devices/demo_daisy`**: firmware running `demo.drive` on the Seed (`just flash demo_daisy`).
 
 ```bash
 just euterpe devices                      # list devices (JSON)
 just euterpe schema demo.drive            # parameter schema (JSON)
 just euterpe render demo.drive --gen sine:220 --set drive=24 --out out.wav
 just test-euterpe                         # tests for the Euterpe crates only
+just bench                                # instruction counts + hot-path checks vs benches/qemu-baseline.txt
+just bench-baseline                       # accept the current counts after an intended change
 ```
+
+### `euterpe bench`
+
+Builds `euterpe_bench_qemu`, runs it on QEMU with the `tools/qemu/euterpe_insn.c` plugin, and prints JSON per device and scenario: instructions per block, an estimated cycle count against `Device::BUDGET_CYCLES_PER_BLOCK`, and a hot-path check. The check walks the call graph from the graph's `Processor::process` in the firmware's disassembly and fails on panics, soft-float calls, f64 instructions or allocation. It exits 1 on a failed check, a device over budget, or a regression against `--baseline`.
+
+- Instruction counts are deterministic, so the baseline has zero tolerance by default. They are not cycles: until DWT calibration from a board exists, cycles are estimated as one per instruction.
+- Needs `qemu-system-arm` (with plugin support), a C compiler with glib headers, and `llvm-objdump` (`rustup component add llvm-tools`).
+- When a change moves the numbers on purpose, run `just bench-baseline` and commit the new baseline with the change.
 
 ### Rules for new processors
 
@@ -49,7 +63,8 @@ just test-euterpe                         # tests for the Euterpe crates only
 2. Smooth audible params with `Smoother`: `prepare` it with `Params::smooth_ms(id)`, call `reset()` from the processor's `reset`, and call `block(target)` once per block.
 3. Use `euterpe_core::fastmath` in the hot path, not `micromath` or `std` math.
 4. Add a test that calls `euterpe_offline::check::check_processor::<YourProcessor>`, plus tests for the processor's actual behavior.
-5. Register new devices in `crates/euterpe_cli/src/registry.rs`.
+5. Register new devices in `crates/euterpe_cli/src/registry.rs` and in `devices!` in `crates/euterpe_bench_qemu/src/main.rs`.
+6. Run `just bench`. The hot path must pass, and the PR states the instructions per block.
 
 ### Lints
 

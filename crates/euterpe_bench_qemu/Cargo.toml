@@ -1,0 +1,21 @@
+[package]
+name = "euterpe_bench_qemu"
+description = "Bench firmware for QEMU's mps2-an500 (Cortex-M7). Run by `euterpe bench`; counts instructions per block."
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "euterpe_bench_qemu"
+test = false
+bench = false
+
+[dependencies]
+euterpe_core = { path = "../euterpe_core" }
+euterpe_bench = { path = "../euterpe_bench" }
+euterpe_demo = { path = "../../devices/demo" }
+cortex-m-rt = "0.7"
+cortex-m-semihosting = "0.5"

@@ -3,6 +3,7 @@
 //! All commands print JSON to stdout, so agents and scripts can parse them.
 //! Errors go to stderr with a non-zero exit code.
 
+mod bench;
 mod json;
 mod registry;
 
@@ -30,6 +31,7 @@ USAGE:
         Render audio through the device and print a level summary.
         Each input channel runs through its own instance of the device.
 
+{BENCH}
 RENDER OPTIONS:
     --in <file.wav>       Input file (any PCM or float WAV).
     --gen <signal>        Generate input instead: impulse | silence | noise
@@ -47,14 +49,25 @@ EXAMPLES:
     euterpe schema demo.drive
     euterpe render demo.drive --gen sine:220 --set drive=24 --out drive.wav
     euterpe render demo.gain --in guitar.wav --set gain=-12 --out quiet.wav
+    euterpe bench demo.drive --baseline benches/qemu-baseline.txt
 ";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    match run(&args) {
-        Ok(json) => {
+    let result = if args.first().map(String::as_str) == Some("bench") {
+        bench::Options::parse(&args[1..]).and_then(|opts| bench::run(&opts))
+    } else {
+        run(&args).map(|json| (json, true))
+    };
+    match result {
+        Ok((json, pass)) => {
             println!("{}", json.render());
-            ExitCode::SUCCESS
+            // A bench that ran but found regressions or hot-path problems.
+            if pass {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            }
         }
         Err(e) => {
             eprintln!("error: {e}");
@@ -66,7 +79,7 @@ fn main() -> ExitCode {
 fn run(args: &[String]) -> Result<Json, String> {
     match args.first().map(String::as_str) {
         None | Some("help" | "-h" | "--help") => {
-            print!("{HELP}");
+            print!("{}", HELP.replace("{BENCH}", bench::HELP));
             std::process::exit(0);
         }
         Some("devices") => Ok(Json::Arr(
@@ -95,7 +108,7 @@ fn run(args: &[String]) -> Result<Json, String> {
     }
 }
 
-fn unknown_device(name: &str) -> String {
+pub(crate) fn unknown_device(name: &str) -> String {
     let names: Vec<&str> = registry::DEVICES.iter().map(|(n, _)| *n).collect();
     format!("unknown device `{name}`; available: {}", names.join(", "))
 }

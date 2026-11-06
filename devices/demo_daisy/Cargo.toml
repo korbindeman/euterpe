@@ -1,0 +1,21 @@
+[package]
+name = "demo_daisy"
+description = "Firmware: demo.drive on the Daisy Seed. Flash with `just flash-demo`."
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "demo_daisy"
+test = false
+bench = false
+
+[dependencies]
+euterpe_core = { path = "../../crates/euterpe_core" }
+euterpe_daisy = { path = "../../crates/euterpe_daisy" }
+euterpe_demo = { path = "../demo" }
+cortex-m-rt = "0.7"
+panic-halt = "0.2.0"

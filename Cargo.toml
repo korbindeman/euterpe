@@ -12,6 +12,10 @@ members = [
     "crates/euterpe_core",
     "crates/euterpe_offline",
     "crates/euterpe_cli",
+    "crates/euterpe_bench",
+    "crates/euterpe_bench_qemu",
+    "crates/euterpe_daisy",
+    "devices/demo_daisy",
     "devices/demo",
 ]
 

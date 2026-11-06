@@ -5,12 +5,19 @@ use crate::processor::Processor;
 /// A product definition: a named, complete signal graph.
 ///
 /// The same device runs on every platform (Daisy, desktop, offline). Panel
-/// bindings and cycle budgets will be added here as those platforms land.
+/// bindings will be added here as those platforms land.
 pub trait Device {
     /// Stable machine name, e.g. `"demo.drive"`. Used by the CLI.
     const NAME: &'static str;
     /// One line for humans and agents.
     const DESCRIPTION: &'static str;
+
+    /// Cycle budget per [`BLOCK`](crate::BLOCK) on the Daisy Seed.
+    ///
+    /// A block at 48 kHz is 0.67 ms, which is 320k cycles at 480 MHz. The
+    /// default leaves about 30% for audio I/O, controls and interrupts.
+    /// `euterpe bench` reports every device against its budget.
+    const BUDGET_CYCLES_PER_BLOCK: u32 = 200_000;
 
     /// The signal graph.
     type Graph: Processor + Default;

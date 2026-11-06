@@ -1,0 +1,11 @@
+[package]
+name = "euterpe_bench"
+description = "Platform-independent benchmark harness: runs a device's graph over fixed scenarios between probe calls."
+version.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+euterpe_core = { path = "../euterpe_core" }

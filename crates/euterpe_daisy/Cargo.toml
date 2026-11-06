@@ -1,0 +1,15 @@
+[package]
+name = "euterpe_daisy"
+description = "The Daisy Seed platform for Euterpe: runs a device's graph on the board's audio codec, with DWT cycle accounting."
+version.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+euterpe_core = { path = "../euterpe_core" }
+daisy = { version = "0.11.0", features = ["seed_1_2"] }
+cortex-m = "0.7"
+cortex-m-rt = { version = "0.7", features = ["device"] }
+stm32h7xx-hal = { version = "0.16", features = ["stm32h750v", "rt", "revision_v"] }
