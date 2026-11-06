@@ -1,0 +1,12 @@
+[package]
+name = "euterpe_registry"
+description = "The one list of Euterpe devices, shared by the CLI, the desktop app and the bench firmware."
+version.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+euterpe_core = { path = "../euterpe_core" }
+euterpe_demo = { path = "../../devices/demo" }

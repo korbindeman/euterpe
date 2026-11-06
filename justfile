@@ -12,7 +12,7 @@ format:
 # Crates that only build for the Daisy target, and the no_std crates that
 # also get checked for it.
 firmware_crates := "-p preamp_daisy -p daisy_runtime -p euterpe_daisy -p demo_daisy -p euterpe_bench_qemu"
-no_std_crates := "-p euterpe_core -p euterpe_demo -p euterpe_bench -p dsp -p preamp"
+no_std_crates := "-p euterpe_core -p euterpe_demo -p euterpe_registry -p euterpe_bench -p dsp -p preamp"
 host_excludes := "--exclude preamp_daisy --exclude daisy_runtime --exclude euterpe_daisy --exclude demo_daisy --exclude euterpe_bench_qemu"
 
 # Host crates on the host, firmware and no_std crates on the Daisy target.

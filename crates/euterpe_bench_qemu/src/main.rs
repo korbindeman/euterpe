@@ -7,8 +7,7 @@
 //! semihosting; the plugin prints one `euterpe-bench` line per scenario, in
 //! the same order.
 //!
-//! To bench a new device, add it to `devices!` below (and to the CLI's
-//! registry).
+//! Benches every device in `euterpe_registry`.
 
 #![no_std]
 #![no_main]
@@ -18,18 +17,17 @@ use core::hint::black_box;
 use cortex_m_rt::entry;
 use cortex_m_semihosting::{debug, hprintln};
 use euterpe_bench::{Probe, Sink, bench_device, bench_overhead};
+use euterpe_core::Device;
 
-macro_rules! devices {
-    ($($device:ty),* $(,)?) => {
-        fn bench_all(probe: &mut Markers, sink: &mut Semihosting) {
-            $( bench_device::<$device>(probe, sink); )*
-        }
-    };
+struct BenchAll<'a> {
+    probe: &'a mut Markers,
+    sink: &'a mut Semihosting,
 }
 
-devices! {
-    euterpe_demo::GainDevice,
-    euterpe_demo::DriveDevice,
+impl euterpe_registry::Each for BenchAll<'_> {
+    fn device<D: Device>(&mut self) {
+        bench_device::<D>(self.probe, self.sink);
+    }
 }
 
 // The plugin hooks the first instruction of each marker. They must stay out
@@ -80,7 +78,10 @@ impl Sink for Semihosting {
 fn main() -> ! {
     let (mut probe, mut sink) = (Markers, Semihosting);
     bench_overhead(&mut probe, &mut sink);
-    bench_all(&mut probe, &mut sink);
+    euterpe_registry::each(&mut BenchAll {
+        probe: &mut probe,
+        sink: &mut sink,
+    });
     debug::exit(debug::EXIT_SUCCESS);
     // Unreachable: QEMU exits above.
     loop {

@@ -179,8 +179,7 @@ pub fn run(opts: &Options) -> Result<(Json, bool), String> {
         }
         if scenarios.is_empty() {
             return Err(format!(
-                "`{name}` is registered in the CLI but not in the bench firmware; \
-                 add it to `devices!` in crates/euterpe_bench_qemu/src/main.rs"
+                "`{name}` has no bench results; the bench firmware is out of date or failed"
             ));
         }
         let over_budget = worst > f64::from(budget);

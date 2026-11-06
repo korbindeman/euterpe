@@ -33,7 +33,8 @@ This repo is becoming **Euterpe**, a toolkit for building audio hardware. The de
 
 - **`crates/euterpe_core`** (`no_std`): `Processor` (block-based, `BLOCK = 32`), `SampleProcessor` + `PerSample`, `Ctx`, `params!` / `ParamSet` schemas, `Smoother` / `Ramp`, `fastmath` (tested error bounds), `Device`.
 - **`crates/euterpe_offline`**: WAV I/O, `render` / `render_with` (latency-compensated, deterministic), test signals, `check::check_processor`, and `analyze` (response, THD, aliasing, null).
-- **`crates/euterpe_cli`**: the `euterpe` binary. Devices are registered in `src/registry.rs`.
+- **`crates/euterpe_registry`** (`no_std`): the one list of devices, read by every tool.
+- **`crates/euterpe_cli`**: the `euterpe` binary.
 - **`devices/demo`**: `demo.gain` and `demo.drive`, the reference examples for writing a processor and a device.
 - **`crates/euterpe_bench`** (`no_std`): the bench harness (`static` and `automated` scenarios), shared by every bench target.
 - **`crates/euterpe_bench_qemu`**: bench firmware for QEMU's `mps2-an500` (a Cortex-M7). Run through `euterpe bench`, never directly.
@@ -68,7 +69,7 @@ Builds `euterpe_bench_qemu`, runs it on QEMU with the `tools/qemu/euterpe_insn.c
 2. Smooth audible params with `Smoother`: `prepare` it with `Params::smooth_ms(id)`, call `reset()` from the processor's `reset`, and call `block(target)` once per block.
 3. Use `euterpe_core::fastmath` in the hot path, not `micromath` or `std` math.
 4. Add a test that calls `euterpe_offline::check::check_processor::<YourProcessor>`, plus tests for the processor's actual behavior. Filters and nonlinear processors also get `analyze` tests (`response`, `thd`, `aliasing`) with numbers from a closed form or an independent reference.
-5. Register new devices in `crates/euterpe_cli/src/registry.rs` and in `devices!` in `crates/euterpe_bench_qemu/src/main.rs`.
+5. Register new devices in `devices!` in `crates/euterpe_registry/src/lib.rs`. The CLI, the desktop app and the bench firmware all read that list.
 6. Run `just bench`. The hot path must pass, and the PR states the instructions per block.
 
 ### CI and the toolchain
