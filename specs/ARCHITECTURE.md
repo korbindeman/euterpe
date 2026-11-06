@@ -200,7 +200,7 @@ impl Device for ComboDevice {
 
 ---
 
-## Agent tooling (`xtask`)
+## Agent tooling (the `euterpe` CLI)
 
 | Command | Does |
 | --- | --- |
@@ -248,7 +248,7 @@ crates/
 devices/
   preamp/
   combo/
-xtask/         render, analyze, bench, schema, flash
+crates/cli/    the `euterpe` binary: render, analyze, bench, schema, flash
 specs/
 ```
 
@@ -256,8 +256,8 @@ specs/
 
 ## Migration from the current repo
 
-1. **Core first.** Create `core` with `Processor`, `Block`, `Ctx`, `PerSample`, and port `params` to the derive-based schema.
-2. **Offline platform and `xtask render` / `analyze`.** Everything after this is verified through them.
+1. **Core first.** Create `core` with `Processor`, `Block`, `Ctx`, `PerSample`, and port `params` to the derive-based schema. *Done as `euterpe_core`. Params use the `params!` macro for now; `#[derive(Params)]` and `#[derive(Chain)]` arrive with the `macros` crate.*
+2. **Offline platform and `euterpe render` / `analyze`.** Everything after this is verified through them. *`render`, `schema`, `devices` and the generic `check_processor` invariants are done (the CLI is the `euterpe_cli` crate rather than an xtask). `analyze` is next.*
 3. **Wrap the existing processors** in `PerSample` so the preamp keeps working. Move the preamp into `devices/preamp`.
 4. **Port `CabSim`** to a native block `Convolver`: real FFT, work amortized across blocks, an optional direct-form head for low latency.
 5. **`Oversampled` and `fastmath`**, verified with the aliasing metric.
