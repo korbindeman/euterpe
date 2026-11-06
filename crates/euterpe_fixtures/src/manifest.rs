@@ -342,7 +342,7 @@ pub const EXCERPTS: &[Excerpt] = &[
             hardware: "Guitar amp, close mic (Guitar-TECHS player 1 rig)",
             align: Align::Window { max_lag_ms: 150.0 },
         },
-        start: Start::Loudest,
+        start: Start::At(15.0), // chosen by Start::Loudest
         len_s: 4.0,
         note: "Palm-muted chugs: transient-heavy low end, tests gate and drive attack.",
     },
@@ -361,7 +361,7 @@ pub const EXCERPTS: &[Excerpt] = &[
             hardware: "Guitar amp, close mic (Guitar-TECHS player 1 rig)",
             align: Align::Window { max_lag_ms: 150.0 },
         },
-        start: Start::Loudest,
+        start: Start::At(143.5), // chosen by Start::Loudest
         len_s: 4.0,
         note: "Major chords: dense intermodulation under drive.",
     },
@@ -377,7 +377,7 @@ pub const EXCERPTS: &[Excerpt] = &[
             hardware: "Guitar amp, close mic (Guitar-TECHS player 3 rig)",
             align: Align::Window { max_lag_ms: 150.0 },
         },
-        start: Start::Loudest,
+        start: Start::At(19.0), // chosen by Start::Loudest
         len_s: 4.0,
         note: "A musical excerpt: realistic dynamics and phrasing.",
     },
@@ -390,7 +390,7 @@ pub const EXCERPTS: &[Excerpt] = &[
                 "P1_techniques/audio/directinput/directinput_PinchHarmonics.wav",
             ),
         },
-        start: Start::Loudest,
+        start: Start::At(267.5), // chosen by Start::Loudest
         len_s: 4.0,
         note: "Pinch harmonics: strong high partials, good aliasing stimulus.",
     },
@@ -403,7 +403,7 @@ pub const EXCERPTS: &[Excerpt] = &[
                 "P2_techniques/audio/directinput/directinput_Bendings.wav",
             ),
         },
-        start: Start::Loudest,
+        start: Start::At(41.5), // chosen by Start::Loudest
         len_s: 4.0,
         note: "String bends: sliding pitch, catches aliasing that moves against the note.",
     },
