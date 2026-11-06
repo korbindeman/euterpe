@@ -3,6 +3,7 @@
 //! All commands print JSON to stdout, so agents and scripts can parse them.
 //! Errors go to stderr with a non-zero exit code.
 
+mod analyze;
 mod bench;
 mod json;
 mod registry;
@@ -31,6 +32,7 @@ USAGE:
         Render audio through the device and print a level summary.
         Each input channel runs through its own instance of the device.
 
+{ANALYZE}
 {BENCH}
 RENDER OPTIONS:
     --in <file.wav>       Input file (any PCM or float WAV).
@@ -49,6 +51,8 @@ EXAMPLES:
     euterpe schema demo.drive
     euterpe render demo.drive --gen sine:220 --set drive=24 --out drive.wav
     euterpe render demo.gain --in guitar.wav --set gain=-12 --out quiet.wav
+    euterpe analyze demo.drive aliasing --set drive=24
+    euterpe analyze demo.gain response --set gain=-6
     euterpe bench demo.drive --baseline benches/qemu-baseline.txt
 ";
 
@@ -79,7 +83,11 @@ fn main() -> ExitCode {
 fn run(args: &[String]) -> Result<Json, String> {
     match args.first().map(String::as_str) {
         None | Some("help" | "-h" | "--help") => {
-            print!("{}", HELP.replace("{BENCH}", bench::HELP));
+            print!(
+                "{}",
+                HELP.replace("{ANALYZE}", analyze::HELP)
+                    .replace("{BENCH}", bench::HELP)
+            );
             std::process::exit(0);
         }
         Some("devices") => Ok(Json::Arr(
@@ -104,7 +112,16 @@ fn run(args: &[String]) -> Result<Json, String> {
             let job = RenderJob::parse(&args[2..])?;
             registry::visit(name, job).ok_or_else(|| unknown_device(name))?
         }
-        Some(other) => Err(format!("unknown command `{other}`; run `euterpe --help`")),
+        Some("analyze") => {
+            let name = args
+                .get(1)
+                .ok_or("usage: euterpe analyze <device> <suite> ... (see --help)")?;
+            let job = analyze::AnalyzeJob::parse(&args[2..])?;
+            registry::visit(name, job).ok_or_else(|| unknown_device(name))?
+        }
+        Some(other) => Err(format!(
+            "unknown command `{other}`; commands: devices, schema, render, analyze, bench"
+        )),
     }
 }
 
@@ -179,7 +196,7 @@ fn schema_json<P: ParamSet>() -> Json {
     )
 }
 
-fn value_json(kind: &ParamKind, value: ParamValue) -> Json {
+pub(crate) fn value_json(kind: &ParamKind, value: ParamValue) -> Json {
     match (kind, value) {
         (_, ParamValue::Float(v)) => Json::num(v),
         (_, ParamValue::Bool(b)) => Json::Bool(b),
@@ -290,7 +307,7 @@ impl RenderJob {
     }
 }
 
-fn parse_num<T: std::str::FromStr>(flag: &str, s: &str) -> Result<T, String> {
+pub(crate) fn parse_num<T: std::str::FromStr>(flag: &str, s: &str) -> Result<T, String> {
     s.parse()
         .map_err(|_| format!("{flag}: `{s}` is not a number"))
 }
@@ -466,5 +483,48 @@ mod tests {
         ))
         .unwrap_err();
         assert!(err.contains("drive, level"), "{err}");
+    }
+
+    #[test]
+    fn analyze_response_reports_the_gain() {
+        let out = run(&args(
+            "analyze demo.gain response --set gain=-6 --freq 1000",
+        ))
+        .unwrap()
+        .render();
+        assert!(out.contains("\"gain_db\": -6"), "{out}");
+    }
+
+    #[test]
+    fn analyze_null_measures_a_small_gain_error() {
+        let dir = std::env::temp_dir().join(format!("euterpe-cli-null-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let input = dir.join("in.wav");
+        let reference = dir.join("ref.wav");
+        let noise = signal::noise(0.5, 4_800, 3);
+        let half: Vec<f32> = noise.iter().map(|s| s * 0.5).collect();
+        wav::write(&input, &Audio::mono(48_000, noise), Encoding::Float32).unwrap();
+        wav::write(&reference, &Audio::mono(48_000, half), Encoding::Float32).unwrap();
+        let cmd = format!(
+            "analyze demo.gain null --set gain=-6 --in {} --reference {}",
+            input.display(),
+            reference.display()
+        );
+        let out = run(&args(&cmd)).unwrap().render();
+        let rms = out
+            .lines()
+            .find_map(|l| l.trim().strip_prefix("\"residual_rms_db\": "))
+            .and_then(|v| v.trim_end_matches(',').parse::<f64>().ok())
+            .unwrap();
+        // -6 dB is a gain of 0.50119, against a reference at exactly 0.5:
+        // the residual is 0.00119 / 0.5, or -52.5 dB.
+        assert!((rms + 52.5).abs() < 0.1, "{out}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn analyze_rejects_unknown_suites() {
+        let err = run(&args("analyze demo.gain loudness")).unwrap_err();
+        assert!(err.contains("response, thd, aliasing, null"), "{err}");
     }
 }

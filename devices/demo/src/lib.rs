@@ -194,4 +194,33 @@ mod tests {
         assert!(out.iter().all(|&s| s <= level + 1e-6));
         assert!((out[4_799] - level).abs() < 1e-4);
     }
+
+    #[test]
+    fn gain_measures_flat_with_no_distortion() {
+        use euterpe_offline::analyze::{self, Setup};
+        let mut p = GainParams::default();
+        p.set_str("gain", "-6").unwrap();
+        let setup = Setup::default();
+        for r in analyze::response::<Gain>(&p, &setup, &analyze::THIRD_OCTAVES, -20.0) {
+            assert!((r.gain_db + 6.0).abs() < 1e-3, "{r:?}");
+        }
+        for t in analyze::thd::<Gain>(&p, &setup, 1_000.0, &analyze::THD_LEVELS) {
+            assert!(t.thd_pct < 1e-4, "{t:?}");
+        }
+    }
+
+    /// The baseline the `Oversampled` wrapper has to beat: tanh at high
+    /// drive with no oversampling aliases audibly at 6-10 kHz.
+    #[test]
+    fn drive_aliases_at_high_frequencies_without_oversampling() {
+        use euterpe_offline::analyze::{self, Setup};
+        let mut p = DriveParams::default();
+        p.set_str("drive", "24").unwrap();
+        let points =
+            analyze::aliasing::<Drive>(&p, &Setup::default(), &[1_000.0, 6_000.0, 10_000.0], -6.0);
+        assert!(points[0].alias_db < points[2].alias_db, "{points:?}");
+        for a in &points[1..] {
+            assert!(a.alias_db > -60.0, "aliasing should be measurable: {a:?}");
+        }
+    }
 }

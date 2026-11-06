@@ -32,7 +32,7 @@ just test
 This repo is becoming **Euterpe**, a toolkit for building audio hardware. The design is in `specs/ARCHITECTURE.md`; read it before adding processors or devices. New work goes into the `euterpe_*` crates. The older crates below are migrated step by step.
 
 - **`crates/euterpe_core`** (`no_std`): `Processor` (block-based, `BLOCK = 32`), `SampleProcessor` + `PerSample`, `Ctx`, `params!` / `ParamSet` schemas, `Smoother` / `Ramp`, `fastmath` (tested error bounds), `Device`.
-- **`crates/euterpe_offline`**: WAV I/O, `render` / `render_with` (latency-compensated, deterministic), test signals, and `check::check_processor`.
+- **`crates/euterpe_offline`**: WAV I/O, `render` / `render_with` (latency-compensated, deterministic), test signals, `check::check_processor`, and `analyze` (response, THD, aliasing, null).
 - **`crates/euterpe_cli`**: the `euterpe` binary. Devices are registered in `src/registry.rs`.
 - **`devices/demo`**: `demo.gain` and `demo.drive`, the reference examples for writing a processor and a device.
 - **`crates/euterpe_bench`** (`no_std`): the bench harness (`static` and `automated` scenarios), shared by every bench target.
@@ -44,10 +44,15 @@ This repo is becoming **Euterpe**, a toolkit for building audio hardware. The de
 just euterpe devices                      # list devices (JSON)
 just euterpe schema demo.drive            # parameter schema (JSON)
 just euterpe render demo.drive --gen sine:220 --set drive=24 --out out.wav
+just euterpe analyze demo.drive aliasing --set drive=24   # suites: response, thd, aliasing, null
 just test-euterpe                         # tests for the Euterpe crates only
 just bench                                # instruction counts + hot-path checks vs benches/qemu-baseline.txt
 just bench-baseline                       # accept the current counts after an intended change
 ```
+
+### `euterpe analyze`
+
+`euterpe_offline::analyze` holds the measurements, so device tests call them directly; the CLI prints them as JSON. Each one renders a sine, skips a settling time, and takes one 16384-point Blackman-Harris FFT frame. Test frequencies are moved to an odd FFT bin (for `aliasing`, the nearest one where no alias lobe overlaps a harmonic), so harmonics and aliases are measured apart exactly. `aliasing` reports `alias_db`: energy at the frequencies where harmonics above Nyquist fold back, relative to the fundamental. Everything else is `residual_db`, which sits at the f32 noise floor (about -116 dB) when the accounting is complete.
 
 ### `euterpe bench`
 
@@ -62,7 +67,7 @@ Builds `euterpe_bench_qemu`, runs it on QEMU with the `tools/qemu/euterpe_insn.c
 1. Implement `Processor` (or `SampleProcessor` wrapped in `PerSample`) with params declared via `params!`. No allocation, panics or dynamic dispatch in `process`.
 2. Smooth audible params with `Smoother`: `prepare` it with `Params::smooth_ms(id)`, call `reset()` from the processor's `reset`, and call `block(target)` once per block.
 3. Use `euterpe_core::fastmath` in the hot path, not `micromath` or `std` math.
-4. Add a test that calls `euterpe_offline::check::check_processor::<YourProcessor>`, plus tests for the processor's actual behavior.
+4. Add a test that calls `euterpe_offline::check::check_processor::<YourProcessor>`, plus tests for the processor's actual behavior. Filters and nonlinear processors also get `analyze` tests (`response`, `thd`, `aliasing`) with numbers from a closed form or an independent reference.
 5. Register new devices in `crates/euterpe_cli/src/registry.rs` and in `devices!` in `crates/euterpe_bench_qemu/src/main.rs`.
 6. Run `just bench`. The hot path must pass, and the PR states the instructions per block.
 
