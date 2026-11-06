@@ -187,4 +187,28 @@ mod tests {
         assert!(out.iter().all(|&s| s <= level + 1e-6));
         assert!((out[4_799] - level).abs() < 1e-4);
     }
+
+    /// Real guitar through max drive: finite, bounded by the level, and
+    /// deterministic. Skips until the committed fixtures exist.
+    #[test]
+    fn drive_on_real_guitar() {
+        let Ok(fixtures) = euterpe_fixtures::load_all() else {
+            std::eprintln!("committed fixtures missing; skipping");
+            return;
+        };
+        let mut params = DriveParams::default();
+        params.set_str("drive", "36").unwrap();
+        params.set_str("level", "0").unwrap();
+        let opts = RenderOptions::new(euterpe_fixtures::SAMPLE_RATE);
+        for fx in fixtures {
+            let a = render(&mut Drive::default(), &params, &fx.di, &opts);
+            let b = render(&mut Drive::default(), &params, &fx.di, &opts);
+            assert_eq!(a, b, "{}", fx.excerpt.id);
+            assert!(
+                a.iter().all(|s| s.is_finite() && s.abs() <= 1.0 + 1e-6),
+                "{}",
+                fx.excerpt.id
+            );
+        }
+    }
 }

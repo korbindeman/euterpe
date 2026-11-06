@@ -9,3 +9,4 @@ euterpe_core = { path = "../../crates/euterpe_core" }
 
 [dev-dependencies]
 euterpe_offline = { path = "../../crates/euterpe_offline" }
+euterpe_fixtures = { path = "../../crates/euterpe_fixtures" }
