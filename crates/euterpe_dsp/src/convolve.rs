@@ -45,6 +45,20 @@ impl<const P: usize> Default for Convolver<P> {
     }
 }
 
+/// The ring slot after `pos`, in `0..p`.
+#[inline(always)]
+const fn next_pos(pos: usize, p: usize) -> usize {
+    if pos + 1 < p { pos + 1 } else { 0 }
+}
+
+/// Where the ring and the reversed IR split into the two forward runs that
+/// pair partition `k` with the input from `k` blocks ago: `fdl[..len]` with
+/// `ir[split..]`, then `fdl[len..]` with `ir[..split]`.
+#[inline(always)]
+const fn runs(pos: usize, p: usize) -> (usize, usize) {
+    (pos + 1, p - 1 - pos)
+}
+
 /// `sum a[i] * b[i]` over complex slices.
 ///
 /// Each product term goes straight into its accumulator (`vmla`/`vmls` on
@@ -111,13 +125,13 @@ impl<const P: usize> Convolver<P> {
         fft::rfft(&self.window, &mut spectrum);
 
         // Into the ring, at `pos`.
-        let pos = if self.pos + 1 < P { self.pos + 1 } else { 0 };
+        let pos = next_pos(self.pos, P);
         self.pos = pos;
 
         // Partition p meets the input from p blocks ago, `fdl[(pos - p) mod
         // P]`. With the IR stored reversed, that is two forward runs:
         // fdl[..=pos] with ir[P-1-pos..], and fdl[pos+1..] with ir[..P-1-pos].
-        let split = P - 1 - pos;
+        let (new_len, split) = runs(pos, P);
         let mut acc = [Complex::ZERO; BINS];
         for ((a, (row, h)), x) in acc
             .iter_mut()
@@ -128,7 +142,7 @@ impl<const P: usize> Convolver<P> {
                 *slot = x;
             }
             let (Some((f_new, f_old)), Some((h_old, h_new))) =
-                (row.split_at_checked(pos + 1), h.split_at_checked(split))
+                (row.split_at_checked(new_len), h.split_at_checked(split))
             else {
                 continue;
             };
@@ -158,6 +172,58 @@ impl<const P: usize> Processor for Convolver<P> {
     #[inline]
     fn process(&mut self, buf: &mut Block, (): &()) {
         Convolver::process(self, buf);
+    }
+}
+
+/// Proofs of the ring arithmetic (`cargo kani -p euterpe_dsp`).
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    /// `pos` never leaves the ring, from any valid position.
+    #[kani::proof]
+    fn ring_position_stays_in_range() {
+        let p: usize = kani::any();
+        kani::assume((1..=1024).contains(&p));
+        let pos: usize = kani::any();
+        kani::assume(pos < p);
+        assert!(next_pos(pos, p) < p);
+    }
+
+    /// For every ring size up to 1024 and every position, both splits
+    /// exist (so `process` never takes its fallback), the paired runs have
+    /// equal lengths, and they cover the ring exactly once.
+    #[kani::proof]
+    fn runs_split_cleanly() {
+        let p: usize = kani::any();
+        kani::assume((1..=1024).contains(&p));
+        let pos: usize = kani::any();
+        kani::assume(pos < p);
+        let (len, split) = runs(pos, p);
+        assert!(len <= p && split <= p);
+        assert!(len == p - split, "fdl[..len] pairs with ir[split..]");
+        assert!(p - len == split, "fdl[len..] pairs with ir[..split]");
+    }
+
+    /// Walking the two runs the way `process` does pairs ring slot `q` with
+    /// partition `(pos - q) mod P`: each partition meets the input from
+    /// exactly that many blocks ago. Checked for every slot of an 8-slot ring.
+    #[kani::proof]
+    #[kani::unwind(10)]
+    fn runs_pair_each_partition_with_its_delay() {
+        const P: usize = 8;
+        let pos: usize = kani::any();
+        kani::assume(pos < P);
+        let (len, split) = runs(pos, P);
+        let mut seen = [false; P];
+        for q in 0..P {
+            // Index into the reversed IR that `process` multiplies slot q by.
+            let h = if q < len { split + q } else { q - len };
+            let partition = P - 1 - h;
+            assert!(partition == (pos + P - q) % P);
+            assert!(!seen[partition]);
+            seen[partition] = true;
+        }
     }
 }
 

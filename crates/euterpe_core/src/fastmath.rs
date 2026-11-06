@@ -94,10 +94,23 @@ pub fn ln(x: f32) -> f32 {
 #[inline]
 pub fn tanh(x: f32) -> f32 {
     // Computed on |x| so the result is exactly odd; tanh(0) = 0 exactly.
-    let a = x.abs().min(9.0);
-    let e = exp2(a * (2.0 * LOG2_E));
-    let y = if a >= 9.0 { 1.0 } else { 1.0 - 2.0 / (e + 1.0) };
-    y.copysign(x)
+    tanh_magnitude(x.abs()).copysign(x)
+}
+
+/// `tanh(a)` for `a >= 0`.
+#[inline(always)]
+fn tanh_magnitude(a: f32) -> f32 {
+    let a = a.min(9.0);
+    if a >= 9.0 {
+        return 1.0;
+    }
+    tanh_from_exp(exp2(a * (2.0 * LOG2_E)))
+}
+
+/// `tanh(a)` from `e = e^(2a)`.
+#[inline(always)]
+fn tanh_from_exp(e: f32) -> f32 {
+    1.0 - 2.0 / (e + 1.0)
 }
 
 /// Decibels to linear gain. Max relative error 1e-6 on `[-120, 120]` dB.
@@ -235,5 +248,64 @@ mod tests {
         );
         assert!(e < 3e-5, "gain_to_db abs err {e}");
         assert_eq!(gain_to_db(0.0), gain_to_db(1e-6));
+    }
+}
+
+/// Proofs over every f32 input (`cargo kani -p euterpe_core`).
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    // `tanh` is proven bounded and odd in steps: one proof over both the
+    // polynomial and the division is too large for the solver.
+
+    /// Step 1: `e^(2a) >= 1` for `a >= 0`, from the `exp2` that computes it.
+    #[kani::proof]
+    fn exp2_of_non_negative_is_at_least_one() {
+        let x: f32 = kani::any();
+        kani::assume(x >= 0.0);
+        let y = exp2(x);
+        assert!(y >= 1.0 && y.is_finite());
+    }
+
+    /// Step 2: for every finite `e >= 1`, `1 - 2 / (e + 1)` is in `[0, 1]`.
+    #[kani::proof]
+    fn tanh_from_exp_is_in_unit_range() {
+        let e: f32 = kani::any();
+        kani::assume(e >= 1.0 && e.is_finite());
+        let y = tanh_from_exp(e);
+        assert!((0.0..=1.0).contains(&y));
+    }
+
+    /// Step 3: the sign is applied by `copysign` to a value computed from
+    /// `|x|` alone, and `|-x|` is `|x|` bit for bit, so `tanh(-x) == -tanh(x)`
+    /// exactly whenever the magnitude `y` is not NaN.
+    #[kani::proof]
+    fn sign_step_is_odd() {
+        let x: f32 = kani::any();
+        let y: f32 = kani::any();
+        kani::assume(!x.is_nan() && !y.is_nan() && y >= 0.0);
+        assert!((-x).abs().to_bits() == x.abs().to_bits());
+        assert!(y.copysign(-x).to_bits() == (-y.copysign(x)).to_bits());
+    }
+
+    /// With steps 1 and 2, the saturated branch: `tanh_magnitude` is in
+    /// `[0, 1]` for every `a >= 0` (NaN-free).
+    #[kani::proof]
+    fn tanh_magnitude_saturates_to_one() {
+        let a: f32 = kani::any();
+        kani::assume(a >= 9.0);
+        assert!(tanh_magnitude(a) == 1.0);
+    }
+
+    /// `exp2` (and so `db_to_gain`) never overflows its exponent arithmetic
+    /// and returns a finite, positive number for every non-NaN input.
+    #[kani::proof]
+    fn exp2_is_finite_and_positive() {
+        let x: f32 = kani::any();
+        kani::assume(!x.is_nan());
+        let y = exp2(x);
+        assert!(y.is_finite());
+        assert!(y > 0.0);
     }
 }

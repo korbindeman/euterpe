@@ -78,9 +78,21 @@ Builds `euterpe_bench_qemu`, runs it on QEMU with the `tools/qemu/euterpe_insn.c
 5. Register new devices in `devices!` in `crates/euterpe_registry/src/lib.rs`. The CLI, the desktop app and the bench firmware all read that list.
 6. Run `just bench`. The hot path must pass, and the PR states the instructions per block.
 
+### Kani proofs
+
+`just kani` runs the `#[cfg(kani)]` proof harnesses (needs `cargo install --locked kani-verifier@0.68.0 && cargo kani setup`). They prove, for every input:
+
+- the oversampler's mirrored rings: every window and lag is in bounds from any position, and pushes read back in order
+- the convolver's ring: the position stays in range, both splits exist, and each partition is paired with the input from exactly its delay
+- the FFT's bit-reversal table is a permutation
+- `fastmath`: `exp2` is finite and positive, and `tanh` is bounded to `[-1, 1]` and exactly odd (in three steps: one proof over the polynomial and the division is too big for the solver)
+- params: any pot reading gives a valid choice, and a float field is never left out of range or NaN
+
+Keep proofs over float polynomials small: split them at a function boundary, as `tanh` is. Check a new proof is not vacuous by planting a bug and watching it fail. CI runs them in the `kani` job.
+
 ### CI and the toolchain
 
-`.github/workflows/ci.yml` runs `just check-format`, `just clippy`, `just check`, `just test` and `just bench` (against the baseline) on every PR. The toolchain is pinned in `rust-toolchain.toml` because a new rustc changes instruction counts. To bump it, change the version, run `just bench-baseline`, and commit both together.
+`.github/workflows/ci.yml` runs `just check-format`, `just clippy`, `just check`, `just test`, `just bench` (against the baseline) and `just kani` on every PR. The toolchain is pinned in `rust-toolchain.toml` because a new rustc changes instruction counts. To bump it, change the version, run `just bench-baseline`, and commit both together.
 
 ### Lints
 

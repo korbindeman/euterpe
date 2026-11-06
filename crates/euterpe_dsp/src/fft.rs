@@ -222,6 +222,23 @@ pub fn irfft_x32(x: &[Complex; BINS], out: &mut [f32; N]) {
     }
 }
 
+/// Proofs (`cargo kani -p euterpe_dsp`).
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    /// The bit-reversal table is a permutation of 0..32 (an involution), so
+    /// `fft32`'s `get` never falls back and no sample is lost or doubled.
+    #[kani::proof]
+    fn bit_reverse_is_an_involution() {
+        let i: usize = kani::any();
+        kani::assume(i < M);
+        let r = usize::from(BIT_REVERSE[i]);
+        assert!(r < M);
+        assert!(usize::from(BIT_REVERSE[r]) == i);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     extern crate std;

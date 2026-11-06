@@ -47,3 +47,18 @@ jobs:
         with:
           name: bench
           path: bench.json
+
+  kani:
+    name: Kani proofs
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - name: Install Kani
+        run: cargo install --locked kani-verifier@0.68.0 && cargo kani setup
+      - run: just kani

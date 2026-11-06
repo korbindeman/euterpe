@@ -90,6 +90,56 @@ impl History {
     }
 }
 
+/// Proofs of the history indexing (`cargo kani -p euterpe_dsp`).
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    fn history_at_any_position() -> History {
+        let mut h = History::default();
+        h.pos = kani::any();
+        h
+    }
+
+    /// From any position (even a corrupted one), every window the filters
+    /// read exists: `process` never takes its fallback.
+    #[kani::proof]
+    fn windows_always_exist() {
+        let h = history_at_any_position();
+        assert!(h.window::<40>().is_some());
+        assert!(h.window::<14>().is_some());
+        assert!(h.window::<10>().is_some());
+        assert!(h.window::<{ CAP }>().is_some());
+    }
+
+    /// The window is the newest samples in order, and `lag` reads back
+    /// exactly what was pushed, from any starting position.
+    #[kani::proof]
+    fn pushes_read_back_in_order() {
+        let mut h = history_at_any_position();
+        let (a, b, c): (f32, f32, f32) = (kani::any(), kani::any(), kani::any());
+        h.push(a);
+        h.push(b);
+        h.push(c);
+        assert!(h.pos < CAP);
+        assert!(h.lag(0).to_bits() == c.to_bits());
+        assert!(h.lag(1).to_bits() == b.to_bits());
+        assert!(h.lag(2).to_bits() == a.to_bits());
+        let w = h.window::<3>().unwrap();
+        assert!(w.map(f32::to_bits) == [a, b, c].map(f32::to_bits));
+    }
+
+    /// Every lag the decimators use (`m <= 19`) indexes inside the buffer.
+    #[kani::proof]
+    fn lags_stay_in_bounds() {
+        let h = history_at_any_position();
+        let lag: usize = kani::any();
+        kani::assume(lag < CAP);
+        let i = ((h.pos & (CAP - 1)) + CAP - 1).wrapping_sub(lag);
+        assert!(i < 2 * CAP);
+    }
+}
+
 /// Dot product of a symmetric tap set with a window, folding the symmetry so
 /// each tap is multiplied once.
 #[inline(always)]

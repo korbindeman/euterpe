@@ -611,6 +611,41 @@ macro_rules! params {
     };
 }
 
+/// Proofs (`cargo kani -p euterpe_core`).
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    const OPTIONS: [&str; 8] = ["a", "b", "c", "d", "e", "f", "g", "h"];
+
+    /// A pot reading, any f32 at all (NaN, infinities, out of range), maps
+    /// to a valid choice index, which `set` then accepts.
+    #[kani::proof]
+    fn any_normalized_reading_is_a_valid_choice() {
+        let len: usize = kani::any();
+        kani::assume((1..=OPTIONS.len()).contains(&len));
+        let kind = ParamKind::choice(&OPTIONS[..len], 0);
+        let ParamValue::Choice(i) = kind.from_normalized(kani::any()) else {
+            panic!("a choice maps to a choice");
+        };
+        assert!(usize::from(i) < len);
+        let mut field = 0u8;
+        assert!(field.assign(&kind, ParamValue::Choice(i)).is_ok());
+    }
+
+    /// Whatever value arrives, a float field ends up inside its range or
+    /// the value is rejected; it is never left out of range or NaN.
+    #[kani::proof]
+    fn float_fields_stay_in_range() {
+        let kind = ParamKind::float(-24.0, 6.0, 0.0);
+        let mut field = 0.0f32;
+        let v: f32 = kani::any();
+        let ok = field.assign(&kind, ParamValue::Float(v)).is_ok();
+        assert!((-24.0..=6.0).contains(&field));
+        assert!(ok == v.is_finite());
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::float_cmp,

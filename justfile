@@ -73,3 +73,9 @@ test-euterpe:
 # Guitar test fixtures, e.g. `just fixtures fetch`, `just fixtures excerpt`, `just fixtures list`
 fixtures *args:
     cargo run -q --release -p euterpe_fixtures --bin euterpe-fixtures -- {{args}}
+
+# Kani proofs (index math, ring arithmetic, fastmath bounds). Needs
+# `cargo install --locked kani-verifier@0.68.0 && cargo kani setup`.
+kani:
+    cargo kani -p euterpe_core
+    cargo kani -p euterpe_dsp
