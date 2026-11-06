@@ -46,6 +46,10 @@ flash bin=binary:
     dfu-suffix --vid 0x0483 --pid 0xdf11 --add target/{{bin}}.bin
     dfu-util -a 0 -s 0x08000000:leave -D target/{{bin}}.bin -d ,0483:df11 || true
 
+# Flash any registered device to the Daisy, e.g. `just flash-device demo.rig`.
+flash-device device:
+    EUTERPE_DEVICE={{device}} just flash demo_daisy
+
 # Instruction counts per block on an emulated Cortex-M7, checked against the
 # baseline. Needs qemu-system-arm, cc + glib headers, and llvm-tools.
 bench *args:

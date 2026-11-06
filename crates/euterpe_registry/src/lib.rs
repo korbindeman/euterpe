@@ -26,6 +26,28 @@ macro_rules! devices {
             $( (<$device as Device>::NAME, <$device as Device>::DESCRIPTION), )*
         ];
 
+        /// Whether a device called `name` is registered. `const`, so
+        /// firmware that picks its device at build time can fail the build
+        /// on a typo.
+        pub const fn contains(name: &str) -> bool {
+            let mut i = 0;
+            while i < DEVICES.len() {
+                let d = DEVICES[i].0.as_bytes();
+                let n = name.as_bytes();
+                if d.len() == n.len() {
+                    let mut k = 0;
+                    while k < d.len() && d[k] == n[k] {
+                        k += 1;
+                    }
+                    if k == d.len() {
+                        return true;
+                    }
+                }
+                i += 1;
+            }
+            false
+        }
+
         /// Run `visitor` with the device called `name`.
         pub fn visit<V: Visitor>(name: &str, visitor: V) -> Option<V::Out> {
             $(
@@ -54,6 +76,15 @@ devices! {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn contains_matches_names_exactly() {
+        assert!(contains("demo.rig"));
+        assert!(contains("demo.drive"));
+        assert!(!contains("demo.driv"));
+        assert!(!contains("demo.drive4"));
+        assert!(!contains(""));
+    }
 
     #[test]
     fn names_are_unique() {

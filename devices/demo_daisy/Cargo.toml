@@ -1,6 +1,6 @@
 [package]
 name = "demo_daisy"
-description = "Firmware: demo.drive on the Daisy Seed. Flash with `just flash-demo`."
+description = "Firmware: any registered device on the Daisy Seed (EUTERPE_DEVICE at build time, demo.drive by default). Flash with `just flash-device <name>`."
 version.workspace = true
 edition.workspace = true
 publish = false
@@ -16,6 +16,6 @@ bench = false
 [dependencies]
 euterpe_core = { path = "../../crates/euterpe_core" }
 euterpe_daisy = { path = "../../crates/euterpe_daisy" }
-euterpe_demo = { path = "../demo" }
+euterpe_registry = { path = "../../crates/euterpe_registry" }
 cortex-m-rt = "0.7"
 panic-halt = "0.2.0"

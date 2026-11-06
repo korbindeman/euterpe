@@ -28,6 +28,10 @@ use crate::json::Json;
 use crate::registry::{self, Visitor};
 
 const TARGET: &str = "thumbv7em-none-eabihf";
+/// Peak stack allowed per device, building the graph included. On the Daisy
+/// the stack shares the 128 KB DTCM with the graph arena (80 KB) and the
+/// other statics.
+const STACK_LIMIT_BYTES: u64 = 32 * 1024;
 const FIRMWARE: &str = "euterpe_bench_qemu";
 const QEMU_TIMEOUT: Duration = Duration::from_mins(2);
 /// Instructions per cycle are not calibrated yet: assume one cycle each.
@@ -125,7 +129,11 @@ pub fn run(opts: &Options) -> Result<(Json, bool), String> {
     let plugin = build_plugin(&root)?;
 
     let symbols = symbols(&objdump, &elf)?;
-    let measurements = run_qemu(&elf, &plugin, &symbols)?;
+    let QemuRun {
+        measurements,
+        stack,
+        graph_bytes,
+    } = run_qemu(&elf, &plugin, &symbols)?;
     let disasm = Disassembly::parse(&tool_output(
         Command::new(&objdump)
             .args(["-d", "-C", "--no-show-raw-insn", "--mcpu=cortex-m7"])
@@ -150,33 +158,9 @@ pub fn run(opts: &Options) -> Result<(Json, bool), String> {
         for m in measurements.iter().filter(|m| m.device == *name) {
             let cycles = m.insns_per_block * CYCLES_PER_INSN;
             worst = worst.max(cycles);
-            let mut fields = vec![
-                ("scenario", Json::str(&m.scenario)),
-                ("insns_per_block", Json::num(round1(m.insns_per_block))),
-                (
-                    "insns_per_sample",
-                    Json::num(round1(m.insns_per_block / BLOCK as f64)),
-                ),
-                ("est_cycles_per_block", Json::num(cycles.round())),
-                (
-                    "budget_pct",
-                    Json::num(round1(100.0 * cycles / f64::from(budget))),
-                ),
-            ];
-            if let Some(base) = &baseline {
-                match base.get(&(m.device.clone(), m.scenario.clone())) {
-                    Some(&before) => {
-                        let change = 100.0 * (m.insns_per_block - before) / before;
-                        let regressed = change > opts.tolerance_pct;
-                        pass &= !regressed;
-                        fields.push(("baseline_insns_per_block", Json::num(before)));
-                        fields.push(("change_pct", Json::num(round1(change))));
-                        fields.push(("regressed", Json::Bool(regressed)));
-                    }
-                    None => fields.push(("baseline_insns_per_block", Json::Null)),
-                }
-            }
-            scenarios.push(Json::Obj(fields));
+            let (fields, regressed) = scenario_report(m, budget, baseline.as_ref(), opts);
+            pass &= !regressed;
+            scenarios.push(fields);
         }
         if scenarios.is_empty() {
             return Err(format!(
@@ -187,10 +171,23 @@ pub fn run(opts: &Options) -> Result<(Json, bool), String> {
         pass &= !over_budget;
         let hot = disasm.hot_path(graph);
         pass &= hot.ok();
+        let stack_bytes = stack.get(*name).copied();
+        let stack_over = stack_bytes.is_none_or(|b| b > STACK_LIMIT_BYTES);
+        pass &= !stack_over;
+        let graph = graph_bytes.get(*name).copied();
         devices.push(Json::Obj(vec![
             ("device", Json::str(*name)),
             ("budget_cycles_per_block", Json::num(budget)),
             ("over_budget", Json::Bool(over_budget)),
+            (
+                "stack_bytes",
+                stack_bytes.map_or(Json::Null, |b| Json::num(b as f64)),
+            ),
+            ("stack_over_limit", Json::Bool(stack_over)),
+            (
+                "graph_bytes",
+                graph.map_or(Json::Null, |b| Json::num(b as f64)),
+            ),
             ("scenarios", Json::Arr(scenarios)),
             ("hot_path", hot.to_json()),
         ]));
@@ -215,10 +212,52 @@ pub fn run(opts: &Options) -> Result<(Json, bool), String> {
             Json::str("1 cycle per instruction: not calibrated against the board yet"),
         ),
         ("blocks_per_scenario", Json::num(euterpe_bench::BLOCKS)),
+        ("stack_limit_bytes", Json::num(STACK_LIMIT_BYTES as f64)),
+        (
+            "graph_arena_bytes",
+            Json::num(euterpe_core::device::GRAPH_ARENA_BYTES as f64),
+        ),
         ("firmware", section_sizes(&objdump, &elf)?),
         ("devices", Json::Arr(devices)),
     ]);
     Ok((report, pass))
+}
+
+/// One scenario's JSON, and whether it regressed against the baseline.
+fn scenario_report(
+    m: &Measurement,
+    budget: u32,
+    baseline: Option<&Baseline>,
+    opts: &Options,
+) -> (Json, bool) {
+    let cycles = m.insns_per_block * CYCLES_PER_INSN;
+    let mut regressed = false;
+    let mut fields = vec![
+        ("scenario", Json::str(&m.scenario)),
+        ("insns_per_block", Json::num(round1(m.insns_per_block))),
+        (
+            "insns_per_sample",
+            Json::num(round1(m.insns_per_block / BLOCK as f64)),
+        ),
+        ("est_cycles_per_block", Json::num(cycles.round())),
+        (
+            "budget_pct",
+            Json::num(round1(100.0 * cycles / f64::from(budget))),
+        ),
+    ];
+    if let Some(base) = baseline {
+        match base.get(&(m.device.clone(), m.scenario.clone())) {
+            Some(&before) => {
+                let change = 100.0 * (m.insns_per_block - before) / before;
+                regressed = change > opts.tolerance_pct;
+                fields.push(("baseline_insns_per_block", Json::num(before)));
+                fields.push(("change_pct", Json::num(round1(change))));
+                fields.push(("regressed", Json::Bool(regressed)));
+            }
+            None => fields.push(("baseline_insns_per_block", Json::Null)),
+        }
+    }
+    (Json::Obj(fields), regressed)
 }
 
 fn round1(x: f64) -> f64 {
@@ -369,11 +408,7 @@ fn section_sizes(objdump: &Path, elf: &Path) -> Result<Json, String> {
     Ok(Json::Obj(fields))
 }
 
-fn run_qemu(
-    elf: &Path,
-    plugin: &Path,
-    symbols: &HashMap<String, u64>,
-) -> Result<Vec<Measurement>, String> {
+fn run_qemu(elf: &Path, plugin: &Path, symbols: &HashMap<String, u64>) -> Result<QemuRun, String> {
     let addr = |name: &str| {
         symbols
             .get(name)
@@ -428,7 +463,31 @@ fn run_qemu(
             stderr.trim()
         ));
     }
-    parse_qemu_output(&stdout, &stderr)
+    Ok(QemuRun {
+        measurements: parse_qemu_output(&stdout, &stderr)?,
+        stack: parse_tagged(&stdout, "stack "),
+        graph_bytes: parse_tagged(&stdout, "graph "),
+    })
+}
+
+/// What the bench firmware reported.
+struct QemuRun {
+    measurements: Vec<Measurement>,
+    /// Stack high-water mark per device, in bytes.
+    stack: HashMap<String, u64>,
+    /// `size_of` the graph per device, in bytes.
+    graph_bytes: HashMap<String, u64>,
+}
+
+/// The firmware's `<tag><device> <bytes>` lines (`stack `, `graph `).
+fn parse_tagged(stdout: &str, tag: &str) -> HashMap<String, u64> {
+    stdout
+        .lines()
+        .filter_map(|l| {
+            let mut p = l.strip_prefix(tag)?.split_whitespace();
+            Some((p.next()?.into(), p.next()?.parse().ok()?))
+        })
+        .collect()
 }
 
 /// Zip the firmware's `bench <device> <scenario> <blocks>` lines with the
@@ -487,7 +546,9 @@ fn parse_qemu_output(stdout: &str, stderr: &str) -> Result<Vec<Measurement>, Str
 // Baselines: a text file, one `<device> <scenario> <insns_per_block>` per line
 // ---------------------------------------------------------------------------
 
-fn read_baseline(path: &Path) -> Result<BTreeMap<(String, String), f64>, String> {
+type Baseline = BTreeMap<(String, String), f64>;
+
+fn read_baseline(path: &Path) -> Result<Baseline, String> {
     let text = fs::read_to_string(path).map_err(|e| format!("reading {}: {e}", path.display()))?;
     let mut map = BTreeMap::new();
     for (i, line) in text.lines().enumerate() {

@@ -17,5 +17,6 @@ bench = false
 euterpe_core = { path = "../euterpe_core" }
 euterpe_bench = { path = "../euterpe_bench" }
 euterpe_registry = { path = "../euterpe_registry" }
+cortex-m = "0.7"
 cortex-m-rt = "0.7"
 cortex-m-semihosting = "0.5"

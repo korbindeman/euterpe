@@ -17,9 +17,11 @@
 //! Parameters stay at their defaults for now; panel bindings come with the
 //! `Controls` part of the platform.
 //!
-//! Memory: the graph lives on the main stack, which is DTCM on the Daisy.
-//! Large graphs (convolution buffers, delay lines) will need explicit
-//! placement in AXI SRAM or SDRAM, per the spec's performance rules.
+//! Memory: the graph is built in place in an 80 KB arena in DTCM
+//! ([`GRAPH_ARENA_BYTES`]), never on the stack, so the stack (the rest of
+//! DTCM) only holds call frames. A graph that doesn't fit is a compile error.
+//! Delay lines and sample memory beyond that will go to SDRAM, per the
+//! spec's performance rules.
 
 #![no_std]
 #![cfg_attr(not(test), warn(clippy::default_numeric_fallback))]
@@ -30,6 +32,8 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use cortex_m::interrupt::Mutex;
 use cortex_m::peripheral::DWT;
 use daisy::audio;
+use euterpe_core::device::GRAPH_ARENA_BYTES;
+use euterpe_core::place::Arena;
 use euterpe_core::{BLOCK, Block, Ctx, Device, Platform, Processor};
 use stm32h7xx_hal::pac::{self, interrupt};
 
@@ -76,8 +80,8 @@ struct Runner {
 }
 
 // SAFETY: single core. The pointer is only dereferenced by the audio
-// interrupt, after `run` has set it up and while `run` (which owns the
-// pointee) never returns.
+// interrupt, after `run` has set it up, and the pointee lives in the static
+// arena for the rest of the program.
 unsafe impl Send for Runner {}
 
 static RUNNER: Mutex<RefCell<Option<Runner>>> = Mutex::new(RefCell::new(None));
@@ -89,6 +93,20 @@ struct Running<P: Processor> {
     params: P::Params,
     buf: Block,
 }
+
+impl<P: Processor + Default> Default for Running<P> {
+    fn default() -> Self {
+        Self {
+            graph: P::default(),
+            params: P::Params::default(),
+            buf: [0.0; BLOCK],
+        }
+    }
+}
+
+/// The graph's home: DTCM (`.bss` is DTCM on the Daisy), zero-wait-state
+/// and outside the caches.
+static GRAPH: Arena<GRAPH_ARENA_BYTES> = Arena::new();
 
 fn process_block<P: Processor>(state: *mut (), frames: &mut audio::Block) {
     // SAFETY: `state` is the `Running<P>` that `Daisy::run::<D>` created for
@@ -126,18 +144,15 @@ impl Platform for Daisy {
 
         #[expect(clippy::cast_precision_loss, reason = "48 kHz is exact in f32")]
         let ctx = Ctx::new(audio::FS.to_Hz() as f32);
-        let mut running = Running::<D::Graph> {
-            graph: D::Graph::default(),
-            params: Default::default(),
-            buf: [0.0; BLOCK],
-        };
+        let running: &'static mut Running<D::Graph> =
+            GRAPH.take().expect("run is called once").place_forever();
         running.graph.prepare(&ctx);
         running.graph.reset();
         BUDGET.store(D::BUDGET_CYCLES_PER_BLOCK, Ordering::Relaxed);
 
         cortex_m::interrupt::free(|cs| {
             RUNNER.borrow(cs).replace(Some(Runner {
-                state: (&raw mut running).cast(),
+                state: (&raw mut *running).cast(),
                 process: process_block::<D::Graph>,
             }));
             let ai = audio_interface.spawn().expect("audio interface starts");
@@ -154,8 +169,8 @@ impl Platform for Daisy {
                 sys_hz / 2
             };
             led.toggle();
-            // `running` stays alive and in place for the interrupt: this
-            // function never returns, and the loop doesn't touch it.
+            // `running` is in the arena for good, and only the interrupt
+            // touches it from here on.
             cortex_m::asm::delay(half_period);
         }
     }

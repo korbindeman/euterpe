@@ -144,25 +144,26 @@ pub struct CabParams {
 }
 
 /// A cabinet: convolution with [`DELUXE_REVERB`], then a smoothed level.
+///
+/// `Default` only zeroes the 34 KB convolver, so it builds in place; the IR
+/// is loaded in `prepare`, as assets should be.
+#[derive(Default)]
 pub struct Cab {
     ir: euterpe_dsp::Convolver<64>,
+    loaded: bool,
     level: Smoother,
-}
-
-impl Default for Cab {
-    fn default() -> Self {
-        Self {
-            ir: euterpe_dsp::Convolver::with_ir(&DELUXE_REVERB),
-            level: Smoother::default(),
-        }
-    }
 }
 
 impl Processor for Cab {
     type Params = CabParams;
 
     fn prepare(&mut self, ctx: &Ctx) {
-        self.ir.reset();
+        if self.loaded {
+            self.ir.reset();
+        } else {
+            self.ir.set_ir(&DELUXE_REVERB);
+            self.loaded = true;
+        }
         self.level.prepare(ctx, CabParams::smooth_ms("level"));
     }
 

@@ -14,6 +14,7 @@
 //! - [`fastmath`]: approximations with documented, tested error bounds.
 //! - [`Device`]: a named, complete signal graph that platforms can run.
 //! - [`Platform`]: something that runs a device (the Daisy, offline, ...).
+//! - [`place`]: building a graph in static memory instead of on the stack.
 
 #![no_std]
 // An unsuffixed float literal falls back to f64, which is soft-float on the
@@ -26,6 +27,7 @@ extern crate self as euterpe_core;
 pub mod device;
 pub mod fastmath;
 pub mod params;
+pub mod place;
 pub mod platform;
 pub mod processor;
 pub mod smooth;

@@ -34,7 +34,7 @@ just test
 
 This repo is becoming **Euterpe**, a toolkit for building audio hardware. The design is in `specs/ARCHITECTURE.md`; read it before adding processors or devices. New work goes into the `euterpe_*` crates. The older crates below are migrated step by step.
 
-- **`crates/euterpe_core`** (`no_std`): `Processor` (block-based, `BLOCK = 32`), `SampleProcessor` + `PerSample`, `Ctx`, `#[derive(Params)]` / `ParamSet` schemas (and the older `params!`), `#[derive(Chain)]`, `Smoother` / `Ramp`, `fastmath` (tested error bounds), `Device`.
+- **`crates/euterpe_core`** (`no_std`): `place::Arena` (platforms build the graph in a static arena, never on the stack), `Processor` (block-based, `BLOCK = 32`), `SampleProcessor` + `PerSample`, `Ctx`, `#[derive(Params)]` / `ParamSet` schemas (and the older `params!`), `#[derive(Chain)]`, `Smoother` / `Ramp`, `fastmath` (tested error bounds), `Device`.
 - **`crates/euterpe_offline`**: WAV I/O, `render` / `render_with` (latency-compensated, deterministic), test signals, `check::check_processor`, and `analyze` (response, THD, aliasing, null).
 - **`crates/euterpe_macros`**: the proc macros behind `#[derive(Params)]` and `#[derive(Chain)]`, re-exported by `euterpe_core`. Nested schemas are composed at compile time (`euterpe_core::params::compose`): ids get the field name as a prefix (`drive.level`), and duplicate ids are a compile error.
 - **`crates/euterpe_dsp`** (`no_std`): DSP blocks. `Oversampled2/4/8<P>`: polyphase half-band stages (taps from `tools/design/halfband.py`, ≥100 dB, flat to 20 kHz), exact integer latency. `Convolver<P>`: zero-latency uniformly partitioned convolution (`P` × 32 taps) on its own 64-point real FFT (`fft`, compile-time twiddles).
@@ -44,7 +44,7 @@ This repo is becoming **Euterpe**, a toolkit for building audio hardware. The de
 - **`crates/euterpe_bench`** (`no_std`): the bench harness (`static` and `automated` scenarios), shared by every bench target.
 - **`crates/euterpe_bench_qemu`**: bench firmware for QEMU's `mps2-an500` (a Cortex-M7). Run through `euterpe bench`, never directly.
 - **`crates/euterpe_daisy`**: the Daisy Seed `Platform`. Runs a device on the codec, measures every block with the DWT cycle counter, blinks the LED fast if a block goes over budget.
-- **`devices/demo_daisy`**: firmware running `demo.drive` on the Seed (`just flash demo_daisy`).
+- **`devices/demo_daisy`**: firmware running any registered device on the Seed, chosen at build time by `EUTERPE_DEVICE` (default `demo.drive`, a typo is a compile error): `just flash-device demo.rig`.
 - **`crates/euterpe_desktop`**: the desktop platform, `euterpe-desktop` (`just play demo.drive`). Plays any registered device through an audio interface (a Volt if connected), with a panel generated from the schema, test-signal and WAV-loop sources, bypass, meters and host load.
 
 ```bash
@@ -67,16 +67,18 @@ Builds `euterpe_bench_qemu`, runs it on QEMU with the `tools/qemu/euterpe_insn.c
 
 - Instruction counts are deterministic, so the baseline has zero tolerance by default. They are not cycles: until DWT calibration from a board exists, cycles are estimated as one per instruction.
 - Needs `qemu-system-arm` (with plugin support), a C compiler with glib headers, and `llvm-objdump` (`rustup component add llvm-tools`).
+- It also reports each device's stack high-water mark (painted and scanned in the firmware) and `size_of` its graph. Over 32 KB of stack fails the bench: the Daisy's stack shares 128 KB of DTCM with `.bss`, which holds the 80 KB graph arena (`GRAPH_ARENA_BYTES`).
 - When a change moves the numbers on purpose, run `just bench-baseline` and commit the new baseline with the change.
 
 ### Rules for new processors
 
 1. Implement `Processor` (or `SampleProcessor` wrapped in `PerSample`) with params declared via `#[derive(Params)]`. Compose processors with `#[derive(Chain)]` rather than by hand. No allocation, panics or dynamic dispatch in `process`.
-2. Smooth audible params with `Smoother`: `prepare` it with `Params::smooth_ms(id)`, call `reset()` from the processor's `reset`, and call `block(target)` once per block.
-3. Use `euterpe_core::fastmath` in the hot path, not `micromath` or `std` math.
-4. Add a test that calls `euterpe_offline::check::check_processor::<YourProcessor>`, plus tests for the processor's actual behavior. Filters and nonlinear processors also get `analyze` tests (`response`, `thd`, `aliasing`) with numbers from a closed form or an independent reference.
-5. Register new devices in `devices!` in `crates/euterpe_registry/src/lib.rs`. The CLI, the desktop app and the bench firmware all read that list.
-6. Run `just bench`. The hot path must pass, and the PR states the instructions per block.
+2. Keep `Default` cheap (zeroed buffers): it runs in place in the arena. Load IRs and tables in `prepare`. A graph bigger than `GRAPH_ARENA_BYTES` is a compile error on the platforms.
+3. Smooth audible params with `Smoother`: `prepare` it with `Params::smooth_ms(id)`, call `reset()` from the processor's `reset`, and call `block(target)` once per block.
+4. Use `euterpe_core::fastmath` in the hot path, not `micromath` or `std` math.
+5. Add a test that calls `euterpe_offline::check::check_processor::<YourProcessor>`, plus tests for the processor's actual behavior. Filters and nonlinear processors also get `analyze` tests (`response`, `thd`, `aliasing`) with numbers from a closed form or an independent reference.
+6. Register new devices in `devices!` in `crates/euterpe_registry/src/lib.rs`. The CLI, the desktop app and the bench firmware all read that list.
+7. Run `just bench`. The hot path must pass, and the PR states the instructions per block.
 
 ### Kani proofs
 

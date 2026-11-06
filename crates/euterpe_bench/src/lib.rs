@@ -16,6 +16,7 @@
 
 use core::hint::black_box;
 
+use euterpe_core::place::ArenaRef;
 use euterpe_core::{BLOCK, Block, Ctx, Device, ParamSet, Processor};
 
 /// Measured blocks per scenario.
@@ -87,10 +88,15 @@ pub fn bench_overhead(probe: &mut impl Probe, sink: &mut impl Sink) {
     sink.scenario("overhead", "empty", BLOCKS, total);
 }
 
-/// Run every scenario for device `D`.
-pub fn bench_device<D: Device>(probe: &mut impl Probe, sink: &mut impl Sink) {
+/// Run every scenario for device `D`, building its graph in `arena` the
+/// way the embedded platforms do.
+pub fn bench_device<D: Device, const N: usize>(
+    arena: &mut ArenaRef<N>,
+    probe: &mut impl Probe,
+    sink: &mut impl Sink,
+) {
     for scenario in Scenario::ALL {
-        let total = run::<D::Graph>(scenario, probe);
+        let total = run::<D::Graph, N>(arena, scenario, probe);
         sink.scenario(D::NAME, scenario.name(), BLOCKS, total);
     }
 }
@@ -101,6 +107,7 @@ pub fn bench_device<D: Device>(probe: &mut impl Probe, sink: &mut impl Sink) {
 /// (`<euterpe_bench::Hot<Graph>>::process`). Without it the optimizer may
 /// inline the graph's `process` into the bench loop, and there would be no
 /// function left to check.
+#[derive(Default)]
 pub struct Hot<P>(pub P);
 
 impl<P: Processor> Hot<P> {
@@ -110,8 +117,12 @@ impl<P: Processor> Hot<P> {
     }
 }
 
-fn run<P: Processor + Default>(scenario: Scenario, probe: &mut impl Probe) -> Option<u64> {
-    let mut processor = Hot(P::default());
+fn run<P: Processor + Default, const N: usize>(
+    arena: &mut ArenaRef<N>,
+    scenario: Scenario,
+    probe: &mut impl Probe,
+) -> Option<u64> {
+    let mut processor = arena.place::<Hot<P>>();
     processor.0.prepare(&Ctx::new(SAMPLE_RATE));
     processor.0.reset();
     let mut params = P::Params::default();
@@ -195,9 +206,10 @@ mod tests {
 
     #[test]
     fn every_scenario_measures_exactly_blocks_regions() {
+        static ARENA: euterpe_core::place::Arena<64> = euterpe_core::place::Arena::new();
         let mut probe = Counting::default();
         let mut sink = Collect::default();
-        bench_device::<Dev>(&mut probe, &mut sink);
+        bench_device::<Dev, 64>(&mut ARENA.take().unwrap(), &mut probe, &mut sink);
         let got: Vec<_> = sink.0.iter().map(|r| (r.1.as_str(), r.3)).collect();
         let blocks = Some(u64::from(BLOCKS));
         assert_eq!(got, [("static", blocks), ("automated", blocks)]);

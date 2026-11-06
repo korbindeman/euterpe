@@ -2,11 +2,11 @@
 # Regenerate with `just bench-baseline` after an intended change.
 demo.gain static 151
 demo.gain automated 208
-demo.drive static 1701
-demo.drive automated 1545.484375
-demo.drive4x static 20446
-demo.drive4x automated 19876.90625
-demo.cab static 32019.28125
-demo.cab automated 32040.28125
-demo.rig static 52460.28125
-demo.rig automated 51912.1875
+demo.drive static 1705
+demo.drive automated 1549.484375
+demo.drive4x static 20299
+demo.drive4x automated 19729.90625
+demo.cab static 32022.28125
+demo.cab automated 32043.28125
+demo.rig static 52311.28125
+demo.rig automated 51763.1875

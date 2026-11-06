@@ -2,6 +2,13 @@
 
 use crate::processor::Processor;
 
+/// Bytes the embedded platforms reserve for a device's graph: an
+/// [`Arena`](crate::place::Arena) in the Daisy's DTCM, next to the stack.
+/// A graph larger than this fails to build for the Daisy, and `euterpe
+/// bench` reports it. 80 KB leaves about 48 KB of DTCM for the stack and
+/// the other statics.
+pub const GRAPH_ARENA_BYTES: usize = 80 * 1024;
+
 /// A product definition: a named, complete signal graph.
 ///
 /// The same device runs on every platform (Daisy, desktop, offline). Panel
@@ -19,7 +26,11 @@ pub trait Device {
     /// `euterpe bench` reports every device against its budget.
     const BUDGET_CYCLES_PER_BLOCK: u32 = 200_000;
 
-    /// The signal graph. `Send + 'static` so a host can move it to its audio thread;
+    /// The signal graph. Its `Default` should be cheap (zeroed buffers), so
+    /// it can be built in place; load assets in `prepare`. See
+    /// [`place`](crate::place).
+    ///
+    /// `Send + 'static` so a host can move it to its audio thread;
     /// graphs are plain data, so this holds unless a processor keeps a raw
     /// pointer.
     type Graph: Processor<Params: Send + 'static> + Default + Send + 'static;
