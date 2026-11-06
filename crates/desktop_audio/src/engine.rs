@@ -85,14 +85,14 @@ fn select_config(
             && cfg.min_sample_rate() <= target_rate
             && cfg.max_sample_rate() >= target_rate
         {
-            return Ok(cfg.clone().with_sample_rate(target_rate));
+            return Ok((*cfg).with_sample_rate(target_rate));
         }
     }
 
     // Fall back to any config that supports our preferred rate.
     for cfg in &supported {
         if cfg.min_sample_rate() <= target_rate && cfg.max_sample_rate() >= target_rate {
-            return Ok(cfg.clone().with_sample_rate(target_rate));
+            return Ok((*cfg).with_sample_rate(target_rate));
         }
     }
 
@@ -192,7 +192,7 @@ impl AudioEngine {
                 let mut last_frame = [0.0f32; 2];
 
                 // Collect input frames into buffer
-                for i in 0..frame_count {
+                for slot in &mut input_buffer[..frame_count] {
                     let input_frame = match consumer.pop() {
                         Ok(f) => f,
                         Err(_) => {
@@ -201,7 +201,7 @@ impl AudioEngine {
                         }
                     };
                     last_frame = input_frame;
-                    input_buffer[i] = input_frame;
+                    *slot = input_frame;
                 }
 
                 // Process entire buffer at once
@@ -211,8 +211,7 @@ impl AudioEngine {
                 );
 
                 // Write output
-                for i in 0..frame_count {
-                    let [left, right] = output_buffer[i];
+                for (i, &[left, right]) in output_buffer[..frame_count].iter().enumerate() {
                     let base = i * output_channels;
                     if output_channels >= 2 {
                         data[base] = left;

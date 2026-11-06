@@ -75,6 +75,7 @@ impl ParamKind {
     }
 
     /// Set the unit label of a float parameter. No effect on other kinds.
+    #[must_use]
     pub const fn unit(self, unit: &'static str) -> Self {
         match self {
             ParamKind::Float {
@@ -97,6 +98,7 @@ impl ParamKind {
     }
 
     /// Set the taper of a float parameter. No effect on other kinds.
+    #[must_use]
     pub const fn taper(self, taper: Taper) -> Self {
         match self {
             ParamKind::Float {
@@ -119,6 +121,7 @@ impl ParamKind {
     }
 
     /// Set the smoothing time of a float parameter. No effect on other kinds.
+    #[must_use]
     pub const fn smooth_ms(self, smooth_ms: f32) -> Self {
         match self {
             ParamKind::Float {
@@ -164,9 +167,9 @@ impl ParamKind {
                     Taper::Exponential => fastmath::log2(v / min) / fastmath::log2(max / min),
                 }
             }
-            (ParamKind::Toggle { .. }, ParamValue::Bool(b)) => b as u8 as f32,
+            (ParamKind::Toggle { .. }, ParamValue::Bool(b)) => f32::from(u8::from(b)),
             (ParamKind::Choice { options, .. }, ParamValue::Choice(i)) if options.len() > 1 => {
-                i as f32 / (options.len() - 1) as f32
+                f32::from(i) / (options.len() - 1) as f32
             }
             _ => 0.0,
         }
@@ -185,7 +188,13 @@ impl ParamKind {
             ParamKind::Toggle { .. } => ParamValue::Bool(n >= 0.5),
             ParamKind::Choice { options, .. } => {
                 let last = options.len().saturating_sub(1) as f32;
-                ParamValue::Choice((n * last + 0.5) as u8)
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    clippy::cast_sign_loss,
+                    reason = "n is clamped to [0, 1], so the result is in 0..=last; `as` saturates anyway"
+                )]
+                let index = (n * last + 0.5) as u8;
+                ParamValue::Choice(index)
             }
         }
     }
@@ -213,7 +222,9 @@ impl ParamKind {
             },
             ParamKind::Choice { options, .. } => {
                 if let Some(i) = options.iter().position(|o| o.eq_ignore_ascii_case(s)) {
-                    return Ok(ParamValue::Choice(i as u8));
+                    return u8::try_from(i)
+                        .map(ParamValue::Choice)
+                        .map_err(|_| ParamError::Parse);
                 }
                 match s.parse::<u8>() {
                     Ok(i) if (i as usize) < options.len() => Ok(ParamValue::Choice(i)),
@@ -452,6 +463,10 @@ macro_rules! params {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "tests compare exact, bit-identical results on purpose"
+)]
 mod tests {
     use super::*;
 

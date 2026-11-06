@@ -249,8 +249,15 @@ impl RenderJob {
                 (audio, path)
             }
             (None, Some(spec)) => {
-                let len = (seconds * rate as f64).round() as usize;
-                let amp = 10f32.powf(level_db as f32 / 20.0);
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    clippy::cast_sign_loss,
+                    reason = "seconds is a validated, non-negative CLI value; level is a dB value well within f32"
+                )]
+                let (len, amp) = (
+                    (seconds * f64::from(rate)).round() as usize,
+                    10f32.powf(level_db as f32 / 20.0),
+                );
                 (
                     Audio::mono(rate, generate(&spec, amp, len, rate)?),
                     format!("gen:{spec}"),
@@ -280,7 +287,7 @@ fn generate(spec: &str, amp: f32, len: usize, rate: u32) -> Result<Vec<f32>, Str
     let hz = |s: &str| -> Result<f64, String> {
         s.parse::<f64>()
             .ok()
-            .filter(|f| *f > 0.0 && *f < rate as f64 / 2.0)
+            .filter(|f| *f > 0.0 && *f < f64::from(rate) / 2.0)
             .ok_or_else(|| format!("`{s}` is not a frequency between 0 and {} Hz", rate / 2))
     };
     Ok(match parts.as_slice() {
@@ -312,8 +319,13 @@ impl Visitor for RenderJob {
         }
 
         let rate = self.input.sample_rate;
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "tail_seconds is a validated, non-negative CLI value"
+        )]
         let opts = RenderOptions {
-            tail: (self.tail_seconds * rate as f64).round() as usize,
+            tail: (self.tail_seconds * f64::from(rate)).round() as usize,
             ..RenderOptions::new(rate)
         };
         let mut latency = 0;
@@ -367,8 +379,8 @@ fn levels(audio: &Audio) -> Json {
     let samples = audio.channels.iter().flatten();
     let (mut peak, mut sum_sq, mut n) = (0f64, 0f64, 0usize);
     for &s in samples {
-        peak = peak.max((s as f64).abs());
-        sum_sq += (s as f64) * (s as f64);
+        peak = peak.max(f64::from(s).abs());
+        sum_sq += f64::from(s) * f64::from(s);
         n += 1;
     }
     let db = |x: f64| {

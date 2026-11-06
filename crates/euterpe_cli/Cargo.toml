@@ -4,6 +4,9 @@ description = "The euterpe command: list devices, dump parameter schemas, render
 version.workspace = true
 edition.workspace = true
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "euterpe"
 path = "src/main.rs"

@@ -41,6 +41,7 @@ impl Ctx {
     }
 
     /// The context for a processor running `factor` times faster than this one.
+    #[must_use]
     pub const fn oversampled(&self, factor: u32) -> Self {
         Self {
             sample_rate: self.sample_rate * factor as f32,
@@ -128,6 +129,10 @@ impl<P: SampleProcessor> Processor for PerSample<P> {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "tests compare exact, bit-identical results on purpose"
+)]
 mod tests {
     use super::*;
 
@@ -138,7 +143,7 @@ mod tests {
         type Params = ();
         fn prepare(&mut self, _: &Ctx) {}
         fn reset(&mut self) {}
-        fn tick(&mut self, x: f32, _: &()) -> f32 {
+        fn tick(&mut self, x: f32, (): &()) -> f32 {
             x * 2.0
         }
     }

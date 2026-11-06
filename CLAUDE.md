@@ -15,12 +15,17 @@ cargo run -p preamp_desktop
 # Daisy Seed firmware (requires ARM toolchain)
 cargo build -p preamp_daisy --target thumbv7em-none-eabihf --release
 
-# Check all crates compile
-cargo check --workspace
+# Check all crates compile (host crates on the host, firmware/no_std crates for the Daisy)
+just check
 
-# Run tests
-cargo test --workspace
+# Lint, same split (all warnings are errors)
+just clippy
+
+# Run tests (the firmware crates can't build for the host)
+cargo test --workspace --exclude preamp_daisy --exclude daisy_runtime
 ```
+
+`cargo check --workspace` on the host fails by design: `preamp_daisy` and `daisy_runtime` only build for `thumbv7em-none-eabihf`.
 
 ## Euterpe (toolkit in progress)
 
@@ -45,6 +50,15 @@ just test-euterpe                         # tests for the Euterpe crates only
 3. Use `euterpe_core::fastmath` in the hot path, not `micromath` or `std` math.
 4. Add a test that calls `euterpe_offline::check::check_processor::<YourProcessor>`, plus tests for the processor's actual behavior.
 5. Register new devices in `crates/euterpe_cli/src/registry.rs`.
+
+### Lints
+
+Euterpe crates opt in to `[workspace.lints]` (root `Cargo.toml`) with `[lints] workspace = true`: clippy pedantic, minus the lints that are noise in DSP code. Legacy crates keep clippy's defaults until they are migrated.
+
+- `allow`/`expect` must carry a `reason = "..."`. Prefer `#[expect]` on the smallest item, so it fails once the lint no longer fires.
+- Casts that can truncate or lose sign (`f32 as i32`, `usize as u32`) are warnings. Use `From`/`try_from` when the value can be out of range; `#[expect]` with a reason when it is range-checked or saturation is intended.
+- `euterpe_core` and device crates warn on `default_numeric_fallback` outside tests: an unsuffixed float literal is f64, which is soft-float on the Daisy.
+- Test modules may `allow(clippy::float_cmp)`: exact comparisons there are deliberate (bit-identical renders, exact-at-integers math).
 
 ## Architecture (legacy crates)
 

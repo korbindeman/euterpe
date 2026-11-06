@@ -17,8 +17,10 @@
 //! Outside their domains the functions saturate rather than produce NaN,
 //! except [`log2`]/[`ln`] of non-positive input, which return `-inf`.
 
-// Coefficients are kept exactly as fitted; clippy would round some of them.
-#![allow(clippy::excessive_precision)]
+#![allow(
+    clippy::excessive_precision,
+    reason = "coefficients are kept exactly as fitted; clippy would round some of them"
+)]
 
 use core::f32::consts::{LN_2, LOG2_E};
 
@@ -32,9 +34,13 @@ const EXP2_MAX_ARG: f32 = f32::from_bits(0x42ff_ffff);
 
 /// Largest integer less than or equal to `x`, for `x` within `i32` range.
 #[inline(always)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "documented: x must be within i32 range"
+)]
 pub fn floor_i32(x: f32) -> i32 {
     let i = x as i32;
-    i - ((i as f32) > x) as i32
+    i - i32::from((i as f32) > x)
 }
 
 /// `2^x`. Max relative error 2.5e-7 on `[-126, 128)`; saturates outside.
@@ -48,7 +54,7 @@ pub fn exp2(x: f32) -> f32 {
     let p = 1.0
         + f * (0.693_151_74
             + f * (0.240_159_27 + f * (0.055_818_675 + f * (0.008_990_997 + f * 0.001_879_317_8))));
-    let scale = f32::from_bits(((xi + 127) as u32) << 23);
+    let scale = f32::from_bits((xi + 127).cast_unsigned() << 23);
     p * scale
 }
 
@@ -66,7 +72,7 @@ pub fn log2(x: f32) -> f32 {
         return f32::NEG_INFINITY;
     }
     let bits = x.to_bits();
-    let e = ((bits >> 23) & 0xff) as i32 - 127;
+    let e = ((bits >> 23) & 0xff).cast_signed() - 127_i32;
     let m = f32::from_bits((bits & 0x007f_ffff) | 0x3f80_0000); // [1, 2)
     let t = m - 1.0;
     // log2(1 + t) on [0, 1), degree 6.
@@ -108,6 +114,11 @@ pub fn gain_to_db(gain: f32) -> f32 {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    clippy::cast_possible_truncation,
+    reason = "tests compare exact results on purpose, against std on small values"
+)]
 mod tests {
     extern crate std;
     use super::*;
@@ -123,8 +134,8 @@ mod tests {
         xs: impl Iterator<Item = f32>,
     ) -> f64 {
         xs.map(|x| {
-            let want = g(x as f64);
-            ((f(x) as f64 - want) / want).abs()
+            let want = g(f64::from(x));
+            ((f64::from(f(x)) - want) / want).abs()
         })
         .fold(0.0, f64::max)
     }
@@ -134,7 +145,7 @@ mod tests {
         g: impl Fn(f64) -> f64,
         xs: impl Iterator<Item = f32>,
     ) -> f64 {
-        xs.map(|x| (f(x) as f64 - g(x as f64)).abs())
+        xs.map(|x| (f64::from(f(x)) - g(f64::from(x))).abs())
             .fold(0.0, f64::max)
     }
 
@@ -174,7 +185,7 @@ mod tests {
     fn log2_bound() {
         // Spans many octaves, including dense coverage of [1, 2).
         let xs = sweep(-40.0, 40.0, 200_000)
-            .map(|p| p.exp2())
+            .map(f32::exp2)
             .chain(sweep(1.0, 2.0, 200_000));
         let e = max_abs_err(log2, f64::log2, xs);
         assert!(e < 4e-6, "log2 abs err {e}");
@@ -184,7 +195,7 @@ mod tests {
 
     #[test]
     fn ln_bound() {
-        let xs = sweep(-30.0, 30.0, 200_000).map(|p| p.exp2());
+        let xs = sweep(-30.0, 30.0, 200_000).map(f32::exp2);
         let e = max_abs_err(ln, f64::ln, xs);
         assert!(e < 3e-6, "ln abs err {e}");
     }

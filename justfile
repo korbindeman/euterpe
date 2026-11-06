@@ -9,8 +9,22 @@ check-format:
 format:
     cargo fmt --all
 
-clippy:
-    cargo clippy --workspace --target {{target}} -- -D warnings
+# Host crates on the host, firmware and no_std crates on the Daisy target.
+clippy: clippy-host clippy-firmware
+
+firmware_crates := "-p preamp_daisy -p daisy_runtime"
+no_std_crates := "-p euterpe_core -p euterpe_demo -p dsp -p preamp"
+
+clippy-host:
+    cargo clippy --workspace --exclude preamp_daisy --exclude daisy_runtime --all-targets -- -D warnings
+
+clippy-firmware:
+    cargo clippy {{firmware_crates}} {{no_std_crates}} --target {{target}} -- -D warnings
+
+# Every crate type-checks for the target it runs on.
+check:
+    cargo check --workspace --exclude preamp_daisy --exclude daisy_runtime --all-targets
+    cargo check {{firmware_crates}} {{no_std_crates}} --target {{target}}
 
 update:
     cargo update

@@ -4,5 +4,8 @@ description = "Offline Euterpe platform: deterministic WAV-in, WAV-out rendering
 version.workspace = true
 edition.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 euterpe_core = { path = "../euterpe_core" }

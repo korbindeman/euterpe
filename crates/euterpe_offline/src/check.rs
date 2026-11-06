@@ -128,7 +128,8 @@ fn extremes(desc: &ParamDesc) -> Vec<ParamValue> {
         ParamKind::Float { min, max, .. } => vec![ParamValue::Float(min), ParamValue::Float(max)],
         ParamKind::Toggle { .. } => vec![ParamValue::Bool(false), ParamValue::Bool(true)],
         ParamKind::Choice { options, .. } => {
-            (0..options.len() as u8).map(ParamValue::Choice).collect()
+            let count = u8::try_from(options.len()).unwrap_or(u8::MAX);
+            (0..count).map(ParamValue::Choice).collect()
         }
     }
 }
@@ -171,7 +172,7 @@ mod tests {
         }
     }
 
-    /// Keeps state across renders because reset() does nothing.
+    /// Keeps state across renders because `reset()` does nothing.
     #[derive(Default)]
     struct Leaky {
         acc: f32,
@@ -180,7 +181,7 @@ mod tests {
         type Params = ();
         fn prepare(&mut self, _: &Ctx) {}
         fn reset(&mut self) {}
-        fn process(&mut self, buf: &mut Block, _: &()) {
+        fn process(&mut self, buf: &mut Block, (): &()) {
             for s in buf.iter_mut() {
                 self.acc = self.acc * 0.5 + *s;
                 *s = self.acc * 0.1;
@@ -195,7 +196,7 @@ mod tests {
         type Params = ();
         fn prepare(&mut self, _: &Ctx) {}
         fn reset(&mut self) {}
-        fn process(&mut self, buf: &mut Block, _: &()) {
+        fn process(&mut self, buf: &mut Block, (): &()) {
             buf.iter_mut().for_each(|s| *s = 1.0 / *s);
         }
     }

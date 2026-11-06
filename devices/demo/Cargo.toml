@@ -4,6 +4,9 @@ description = "Demo Euterpe devices: a gain stage and a tanh drive. Small, compl
 version.workspace = true
 edition.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 euterpe_core = { path = "../../crates/euterpe_core" }
 

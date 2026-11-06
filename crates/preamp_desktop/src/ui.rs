@@ -141,33 +141,31 @@ impl PreampApp {
 
                     // Handle IR file dialog after releasing the channel lock
                     drop(channel);
-                    if browse_clicked {
-                        if let Some(path) = rfd::FileDialog::new()
+                    if browse_clicked
+                        && let Some(path) = rfd::FileDialog::new()
                             .add_filter("WAV", &["wav"])
                             .pick_file()
-                        {
-                            match desktop_audio::load_ir(&path, preamp::SAMPLE_RATE, IR_MAX_LENGTH)
-                            {
-                                Ok(ir) => {
-                                    let filename = path
-                                        .file_name()
-                                        .map(|n| n.to_string_lossy().into_owned())
-                                        .unwrap_or_default();
-                                    *ir_filename = filename;
+                    {
+                        match desktop_audio::load_ir(&path, preamp::SAMPLE_RATE, IR_MAX_LENGTH) {
+                            Ok(ir) => {
+                                let filename = path
+                                    .file_name()
+                                    .map(|n| n.to_string_lossy().into_owned())
+                                    .unwrap_or_default();
+                                *ir_filename = filename;
 
-                                    // Store IR in pending slot for audio thread to pick up
-                                    let pending = if channel_index == 0 {
-                                        &self.state.ch1_pending_ir
-                                    } else {
-                                        &self.state.ch2_pending_ir
-                                    };
-                                    if let Ok(mut p) = pending.lock() {
-                                        p.ir = Some(ir);
-                                    }
+                                // Store IR in pending slot for audio thread to pick up
+                                let pending = if channel_index == 0 {
+                                    &self.state.ch1_pending_ir
+                                } else {
+                                    &self.state.ch2_pending_ir
+                                };
+                                if let Ok(mut p) = pending.lock() {
+                                    p.ir = Some(ir);
                                 }
-                                Err(e) => {
-                                    *ir_filename = format!("Error: {e}");
-                                }
+                            }
+                            Err(e) => {
+                                *ir_filename = format!("Error: {e}");
                             }
                         }
                     }

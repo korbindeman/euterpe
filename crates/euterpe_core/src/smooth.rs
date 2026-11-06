@@ -6,6 +6,9 @@
 
 use crate::processor::{BLOCK, Ctx};
 
+#[expect(clippy::cast_possible_truncation, reason = "BLOCK is 32")]
+const BLOCK_U32: u32 = BLOCK as u32;
+
 /// A linear ramp across one block. Call [`Ramp::tick`] once per sample.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Ramp {
@@ -70,7 +73,13 @@ impl Smoother {
 
     /// Set the ramp time. 0 ms jumps straight to new targets.
     pub fn prepare(&mut self, ctx: &Ctx, ms: f32) {
-        self.length = ctx.ms_to_samples(ms).max(0.0) as u32;
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "clamped to >= 0 and `as` saturates; NaN becomes 0, which means no ramp"
+        )]
+        let length = ctx.ms_to_samples(ms).max(0.0) as u32;
+        self.length = length;
     }
 
     /// Forget the current value: the next target is taken without a ramp.
@@ -107,9 +116,14 @@ impl Smoother {
     /// of a ramp lands exactly on the target.
     #[inline]
     pub fn block(&mut self, target: f32) -> Ramp {
+        #[expect(
+            clippy::float_cmp,
+            reason = "any change in target, however small, restarts the ramp"
+        )]
+        let changed = target != self.target;
         if !self.primed {
             self.snap(target);
-        } else if target != self.target {
+        } else if changed {
             self.target = target;
             if self.length == 0 {
                 self.snap(target);
@@ -124,11 +138,11 @@ impl Smoother {
         }
 
         let start = self.current;
-        let end = if self.remaining as usize <= BLOCK {
+        let end = if self.remaining <= BLOCK_U32 {
             self.remaining = 0;
             self.target
         } else {
-            self.remaining -= BLOCK as u32;
+            self.remaining -= BLOCK_U32;
             start + self.increment * BLOCK as f32
         };
         self.current = end;
@@ -140,6 +154,10 @@ impl Smoother {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "tests compare exact, bit-identical results on purpose"
+)]
 mod tests {
     use super::*;
 

@@ -42,6 +42,12 @@ pub struct CabSim {
     ir_loaded: bool,
 }
 
+impl Default for CabSim {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CabSim {
     pub fn new() -> Self {
         Self {
@@ -133,6 +139,10 @@ impl CabSim {
     }
 
     /// Process a full block using partitioned overlap-add convolution.
+    #[allow(
+        clippy::needless_range_loop,
+        reason = "legacy code, replaced by the block Convolver; indices mirror the math"
+    )]
     fn process_block(&mut self) {
         // Prepare input spectrum: input samples zero-padded to FFT_SIZE
         let mut input_spectrum = [Complex32 { re: 0.0, im: 0.0 }; FFT_SIZE];

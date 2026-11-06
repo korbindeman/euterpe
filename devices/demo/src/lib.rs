@@ -6,6 +6,9 @@
 //!   oversampled yet, so it aliases at high drive.
 
 #![no_std]
+// An unsuffixed float literal falls back to f64, which is soft-float on the
+// Cortex-M7. Code that runs on the device must make every literal's type clear.
+#![cfg_attr(not(test), warn(clippy::default_numeric_fallback))]
 
 use euterpe_core::{
     Block, Ctx, Device, ParamKind, ParamSet, Processor, Smoother, fastmath, params,
@@ -136,7 +139,7 @@ mod tests {
         let mut params = GainParams::default();
         params.set_str("gain", "-6").unwrap();
         let half = fastmath::db_to_gain(-6.0);
-        let out = euterpe_offline::render::render_with(
+        let out = render::render_with(
             &mut Gain::default(),
             &mut params,
             &input,
@@ -173,6 +176,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::large_stack_arrays,
+        reason = "test-only input, 100 ms at 48 kHz"
+    )]
     fn drive_saturates_to_level() {
         let mut params = DriveParams::default();
         params.set_str("drive", "36").unwrap();

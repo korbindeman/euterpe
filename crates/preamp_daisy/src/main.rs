@@ -160,7 +160,7 @@ fn main() -> ! {
 
         // Heartbeat LED toggles every 50 iterations (~0.5s at 100Hz).
         loop_count = loop_count.wrapping_add(1);
-        if loop_count % 50 == 0 {
+        if loop_count.is_multiple_of(50) {
             led_user.toggle();
         }
 

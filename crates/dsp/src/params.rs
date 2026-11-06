@@ -125,13 +125,7 @@ impl Knob {
     /// Set from normalized 0.0..1.0 range (for hardware ADC input).
     /// Maps to min..max range.
     pub fn set_normalized(&mut self, normalized: f32) {
-        let clamped = if normalized < 0.0 {
-            0.0
-        } else if normalized > 1.0 {
-            1.0
-        } else {
-            normalized
-        };
+        let clamped = normalized.clamp(0.0, 1.0);
         let value = self.min + clamped * (self.max - self.min);
         self.set(value);
     }

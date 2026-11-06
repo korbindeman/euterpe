@@ -12,8 +12,12 @@ pub fn impulse(len: usize, amplitude: f32) -> Vec<f32> {
 }
 
 /// A sine at `freq` Hz.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "computed in f64 for phase accuracy, stored as f32"
+)]
 pub fn sine(freq: f64, amplitude: f32, len: usize, sample_rate: u32) -> Vec<f32> {
-    let w = TAU * freq / sample_rate as f64;
+    let w = TAU * freq / f64::from(sample_rate);
     (0..len)
         .map(|i| (w * i as f64).sin() as f32 * amplitude)
         .collect()
@@ -21,13 +25,17 @@ pub fn sine(freq: f64, amplitude: f32, len: usize, sample_rate: u32) -> Vec<f32>
 
 /// An exponential (log) sine sweep from `f0` to `f1` Hz, as used for
 /// impulse-response and harmonic-distortion measurement (Farina's method).
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "computed in f64 for phase accuracy, stored as f32"
+)]
 pub fn log_sweep(f0: f64, f1: f64, amplitude: f32, len: usize, sample_rate: u32) -> Vec<f32> {
-    let t_total = len as f64 / sample_rate as f64;
+    let t_total = len as f64 / f64::from(sample_rate);
     let k = (f1 / f0).ln();
     let l = t_total / k;
     (0..len)
         .map(|i| {
-            let t = i as f64 / sample_rate as f64;
+            let t = i as f64 / f64::from(sample_rate);
             let phase = TAU * f0 * l * ((t / l).exp() - 1.0);
             phase.sin() as f32 * amplitude
         })
@@ -51,6 +59,10 @@ pub fn noise(amplitude: f32, len: usize, seed: u64) -> Vec<f32> {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "tests compare exact, bit-identical results on purpose"
+)]
 mod tests {
     use super::*;
 

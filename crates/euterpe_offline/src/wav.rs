@@ -136,8 +136,8 @@ pub fn decode(bytes: &[u8]) -> Result<Audio, WavError> {
 
     let bytes_per_sample = (bits as usize).div_ceil(8);
     let decode_sample: fn(&[u8]) -> f32 = match (format, bits) {
-        (FORMAT_PCM, 8) => |b| (b[0] as f32 - 128.0) / 128.0,
-        (FORMAT_PCM, 16) => |b| i16::from_le_bytes([b[0], b[1]]) as f32 / 32_768.0,
+        (FORMAT_PCM, 8) => |b| (f32::from(b[0]) - 128.0) / 128.0,
+        (FORMAT_PCM, 16) => |b| f32::from(i16::from_le_bytes([b[0], b[1]])) / 32_768.0,
         (FORMAT_PCM, 24) => {
             |b| (i32::from_le_bytes([0, b[0], b[1], b[2]]) >> 8) as f32 / 8_388_608.0
         }
@@ -145,6 +145,10 @@ pub fn decode(bytes: &[u8]) -> Result<Audio, WavError> {
             |b| i32::from_le_bytes([b[0], b[1], b[2], b[3]]) as f32 / 2_147_483_648.0
         }
         (FORMAT_FLOAT, 32) => |b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]),
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "f64 files are decoded to f32 by design"
+        )]
         (FORMAT_FLOAT, 64) => {
             |b| f64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]) as f32
         }
@@ -171,6 +175,10 @@ pub fn write(path: impl AsRef<Path>, audio: &Audio, encoding: Encoding) -> Resul
     Ok(())
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "channel count and data length are range-checked first; samples are clamped before quantizing"
+)]
 pub fn encode(audio: &Audio, encoding: Encoding) -> Result<Vec<u8>, WavError> {
     let channels = audio.channels.len();
     if channels == 0 || channels > u16::MAX as usize {
@@ -227,6 +235,10 @@ pub fn encode(audio: &Audio, encoding: Encoding) -> Result<Vec<u8>, WavError> {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "tests compare exact, bit-identical results on purpose"
+)]
 mod tests {
     use super::*;
 
