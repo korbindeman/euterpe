@@ -1,0 +1,19 @@
+[package]
+name = "euterpe_preamp"
+description = "The legacy instrument preamp channel, ported to Euterpe: input conditioning, gate, three compressors, EQ, saturator, cab, chorus, gain and limiter."
+version.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+euterpe_core = { path = "../../crates/euterpe_core" }
+euterpe_dsp = { path = "../../crates/euterpe_dsp" }
+euterpe_irs = { path = "../../crates/euterpe_irs" }
+
+[dev-dependencies]
+euterpe_offline = { path = "../../crates/euterpe_offline" }
+euterpe_fixtures = { path = "../../crates/euterpe_fixtures" }
+dsp = { path = "../../crates/dsp" }
+preamp = { path = "../../crates/preamp" }

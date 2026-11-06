@@ -75,6 +75,7 @@ devices! {
     euterpe_pedals::TremoloDevice,
     euterpe_pedals::DelayDevice,
     euterpe_pedals::EqDevice,
+    euterpe_preamp::PreampDevice,
 }
 
 #[cfg(test)]

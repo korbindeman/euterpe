@@ -11,6 +11,7 @@ workspace = true
 euterpe_core = { path = "../euterpe_core" }
 euterpe_demo = { path = "../../devices/demo" }
 euterpe_pedals = { path = "../../devices/pedals" }
+euterpe_preamp = { path = "../../devices/preamp" }
 
 [dev-dependencies]
 euterpe_offline = { path = "../euterpe_offline" }

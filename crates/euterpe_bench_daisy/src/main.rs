@@ -16,6 +16,12 @@
 //! hands the log to `euterpe bench --board-log`, which puts cycles next to
 //! QEMU's instruction counts.
 //!
+//! Every registered device is linked unless `EUTERPE_BENCH_DEVICES` names
+//! a comma-separated subset at build time (`just board-bench
+//! preamp.channel,pedal.eq`). All of them together nearly fill the
+//! Seed's 128 KB of flash, so the subset is how a new device gets
+//! measured once they no longer fit.
+//!
 //! Needs a debug probe: semihosting without one halts the core.
 
 #![no_std]
@@ -66,6 +72,62 @@ impl Sink for Rtt {
     }
 }
 
+/// The devices to link, from the build environment. Unset or empty means
+/// all of them.
+const SELECTED: &str = match option_env!("EUTERPE_BENCH_DEVICES") {
+    Some(list) => list,
+    None => "",
+};
+
+/// Whether `name` is one of the comma-separated entries of [`SELECTED`].
+/// `const`, so a device left out is never linked.
+const fn selected(name: &str) -> bool {
+    let (list, name) = (SELECTED.as_bytes(), name.as_bytes());
+    if list.is_empty() {
+        return true;
+    }
+    let mut start = 0;
+    while start <= list.len() {
+        let mut end = start;
+        while end < list.len() && list[end] != b',' {
+            end += 1;
+        }
+        if end - start == name.len() {
+            let mut k = 0;
+            while k < name.len() && list[start + k] == name[k] {
+                k += 1;
+            }
+            if k == name.len() {
+                return true;
+            }
+        }
+        start = end + 1;
+    }
+    false
+}
+
+/// Fails the build on a name in [`SELECTED`] that isn't registered.
+const _: () = {
+    let list = SELECTED.as_bytes();
+    let mut start = 0;
+    while start < list.len() {
+        let mut end = start;
+        while end < list.len() && list[end] != b',' {
+            end += 1;
+        }
+        let (entry, _) = list.split_at(end);
+        let (_, entry) = entry.split_at(start);
+        match core::str::from_utf8(entry) {
+            Ok(name) => assert!(
+                euterpe_registry::contains(name),
+                "EUTERPE_BENCH_DEVICES names a device that isn't registered"
+            ),
+            Err(_) => panic!("EUTERPE_BENCH_DEVICES is not UTF-8"),
+        }
+        start = end + 1;
+    }
+};
+
 struct BenchAll {
     fast: ArenaRef<GRAPH_ARENA_BYTES>,
     large: ArenaRef<LARGE_GRAPH_ARENA_BYTES>,
@@ -75,6 +137,9 @@ struct BenchAll {
 
 impl euterpe_registry::Each for BenchAll {
     fn device<D: Device>(&mut self) {
+        if !const { selected(D::NAME) } {
+            return;
+        }
         let (fast, large) = (&mut self.fast, &mut self.large);
         let ran = bench_device::<D, GRAPH_ARENA_BYTES>(fast, &mut self.probe, &mut self.sink)
             || bench_device::<D, LARGE_GRAPH_ARENA_BYTES>(large, &mut self.probe, &mut self.sink);

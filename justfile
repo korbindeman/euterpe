@@ -15,7 +15,7 @@ chip := "STM32H750IBKx"
 # Crates that only build for the Daisy target, and the no_std crates that
 # also get checked for it.
 firmware_crates := "-p preamp_daisy -p daisy_runtime -p euterpe_daisy -p demo_daisy -p euterpe_bench_qemu -p euterpe_bench_daisy"
-no_std_crates := "-p euterpe_core -p euterpe_dsp -p euterpe_demo -p euterpe_pedals -p euterpe_registry -p euterpe_bench -p dsp -p preamp"
+no_std_crates := "-p euterpe_core -p euterpe_dsp -p euterpe_demo -p euterpe_pedals -p euterpe_preamp -p euterpe_irs -p euterpe_registry -p euterpe_bench -p dsp -p preamp"
 host_excludes := "--exclude preamp_daisy --exclude daisy_runtime --exclude euterpe_daisy --exclude demo_daisy --exclude euterpe_bench_qemu --exclude euterpe_bench_daisy"
 
 # Host crates on the host, firmware and no_std crates on the Daisy target.
@@ -59,8 +59,8 @@ probe-run device="demo.drive":
     probe-rs run --chip {{chip}} target/{{target}}/release/demo_daisy
 
 # Bench every device on the Daisy via a debug probe, next to QEMU's counts.
-board-bench:
-    cargo build --release -p euterpe_bench_daisy --target {{target}}
+board-bench devices="":
+    EUTERPE_BENCH_DEVICES={{devices}} cargo build --release -p euterpe_bench_daisy --target {{target}}
     probe-rs run --chip {{chip}} target/{{target}}/release/euterpe_bench_daisy | tee target/board-bench.log
     just bench --board-log target/board-bench.log
 
@@ -86,7 +86,7 @@ euterpe *args:
 
 # Test the Euterpe crates only (no hardware or desktop dependencies)
 test-euterpe:
-    cargo test -p euterpe_core -p euterpe_macros -p euterpe_dsp -p euterpe_offline -p euterpe_cli -p euterpe_demo -p euterpe_pedals -p euterpe_registry -p euterpe_fixtures
+    cargo test -p euterpe_core -p euterpe_macros -p euterpe_dsp -p euterpe_offline -p euterpe_cli -p euterpe_demo -p euterpe_pedals -p euterpe_preamp -p euterpe_irs -p euterpe_registry -p euterpe_fixtures
 
 # Guitar test fixtures, e.g. `just fixtures fetch`, `just fixtures excerpt`, `just fixtures list`
 fixtures *args:

@@ -114,7 +114,7 @@ impl<const P: usize> Convolver<P> {
     }
 
     /// Convolve one block in place.
-    #[inline]
+    #[inline(always)]
     pub fn process(&mut self, buf: &mut Block) {
         // Slide the window: [previous block, this block].
         self.window.copy_within(BLOCK.., 0);

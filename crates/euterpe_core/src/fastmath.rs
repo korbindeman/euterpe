@@ -15,6 +15,7 @@
 //! | [`tan_pi`] | `[0, 0.49]` | 1.5e-6 relative |
 //! | [`db_to_gain`] | `[-120, 120]` dB | 1e-6 relative |
 //! | [`gain_to_db`] | `>= 1e-6` | 3e-5 dB |
+//! | [`power_to_db`] | `>= 1e-12` | 2e-5 dB |
 //!
 //! Outside their domains the functions saturate rather than produce NaN,
 //! except [`log2`]/[`ln`] of non-positive input, which return `-inf`.
@@ -167,6 +168,14 @@ pub fn db_to_gain(db: f32) -> f32 {
 #[inline]
 pub fn gain_to_db(gain: f32) -> f32 {
     log2(gain.max(1e-6)) * LOG2_TO_DB
+}
+
+/// Power (a squared amplitude) to decibels, `10 log10(p)`: for RMS
+/// detectors, without a square root. Inputs below 1e-12 (-120 dB) are
+/// clamped. Max absolute error 1.5e-5 dB.
+#[inline]
+pub fn power_to_db(power: f32) -> f32 {
+    log2(power.max(1e-12)) * (0.5 * LOG2_TO_DB)
 }
 
 #[cfg(test)]
@@ -324,6 +333,14 @@ mod tests {
             assert_eq!(sin_turns(k as f32 * 0.5), 0.0);
         }
         assert_eq!(cos_turns(0.0), 0.999_999_94);
+    }
+
+    #[test]
+    fn power_to_db_bound() {
+        let xs = sweep(-39.0, 20.0, 200_000).map(f32::exp2);
+        let e = max_abs_err(power_to_db, |p| 10.0 * p.log10(), xs);
+        assert!(e < 2e-5, "power_to_db err {e}");
+        assert!((power_to_db(0.0) + 120.0).abs() < 1e-3);
     }
 
     #[test]

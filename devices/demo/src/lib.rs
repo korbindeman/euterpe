@@ -135,7 +135,7 @@ impl Device for Drive4xDevice {
 
 /// The Deluxe Reverb IR the legacy preamp ships, resampled to 48 kHz and
 /// peak-normalized at build time.
-pub static DELUXE_REVERB: [f32; 2048] = ir_embed::embed_ir!("ir/deluxe_reverb.wav", 2048);
+pub use euterpe_irs::DELUXE_REVERB;
 
 #[derive(Params, Clone, Debug, PartialEq)]
 pub struct CabParams {

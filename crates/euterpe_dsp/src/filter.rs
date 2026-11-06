@@ -207,7 +207,7 @@ pub struct DcBlocker {
 #[must_use]
 #[inline]
 pub fn dc_blocker_coeff(f: f32) -> f32 {
-    1.0 - core::f32::consts::TAU * f.clamp(0.0, 0.01)
+    fastmath::exp(-core::f32::consts::TAU * f.clamp(0.0, 0.01))
 }
 
 impl DcBlocker {

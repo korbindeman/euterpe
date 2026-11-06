@@ -12,6 +12,8 @@
 //! - [`filter`]: [`Svf`] (every second-order shape, stable under
 //!   modulation), [`OnePole`] and [`DcBlocker`].
 //! - [`delay`]: [`DelayLine`], with integer, linear and cubic taps.
+//! - [`dynamics`]: [`Follower`] envelopes and gain smoothers, and the
+//!   [`SoftKnee`] compressor curve.
 //! - [`lfo`]: [`Phasor`] and the LFO [`Shape`]s.
 
 #![no_std]
@@ -21,6 +23,7 @@
 
 pub mod convolve;
 pub mod delay;
+pub mod dynamics;
 pub mod fft;
 pub mod filter;
 pub mod lfo;
@@ -28,6 +31,7 @@ pub mod oversample;
 
 pub use convolve::Convolver;
 pub use delay::DelayLine;
+pub use dynamics::{Ballistics, Follower, SoftKnee, time_constant};
 pub use filter::{DcBlocker, OnePole, Svf, SvfCoeffs, dc_blocker_coeff, one_pole_coeff};
 pub use lfo::{Phasor, Shape};
 pub use oversample::{Oversample2x, Oversampled2, Oversampled4, Oversampled8};

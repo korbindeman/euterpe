@@ -1,0 +1,11 @@
+[package]
+name = "euterpe_irs"
+description = "Cabinet impulse responses embedded at build time (48 kHz, peak-normalized, 2048 taps). Only the ones a device uses are linked."
+version.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+ir_embed = { path = "../ir_embed" }
