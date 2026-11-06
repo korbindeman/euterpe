@@ -1,0 +1,12 @@
+[package]
+name = "euterpe_fixtures"
+description = "Real guitar test fixtures: a pinned manifest of CC BY datasets, a fetch tool, and loaders for the committed excerpts."
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+euterpe_offline = { path = "../euterpe_offline" }
+
+[[bin]]
+name = "euterpe-fixtures"
+path = "src/bin/euterpe-fixtures.rs"

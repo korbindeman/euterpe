@@ -15,3 +15,4 @@ ir_embed = { path = "../../crates/ir_embed" }
 [dev-dependencies]
 dsp = { path = "../../crates/dsp" }
 euterpe_offline = { path = "../../crates/euterpe_offline" }
+euterpe_fixtures = { path = "../../crates/euterpe_fixtures" }

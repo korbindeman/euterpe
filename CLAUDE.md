@@ -200,3 +200,7 @@ embedded-sdmmc = "0.7"  # FAT filesystem
 - SDRAM can hold many IRs (64MB = ~700 IRs at 2048 samples each)
 - Could scan directory for all .wav files and build IR list
 - IR switching at runtime just calls `channel.set_ir()` with different slice
+
+## Guitar test fixtures
+
+Real guitar audio (CC BY 4.0) lives in `fixtures/` and is loaded with the `euterpe_fixtures` crate: `euterpe_fixtures::load("gtechs_palm_mute")` gives a 48 kHz DI and, for paired fixtures, the same performance through real hardware. Small excerpts are committed; the full datasets (~18 GB) are fetched into the gitignored `fixtures/cache/` with `just fixtures fetch`. Tests needing the cache must skip when it's absent. See `fixtures/README.md`.
