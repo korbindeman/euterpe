@@ -9,6 +9,7 @@ workspace = true
 
 [dependencies]
 euterpe_core = { path = "../../crates/euterpe_core" }
+euterpe_dsp = { path = "../../crates/euterpe_dsp" }
 
 [dev-dependencies]
 euterpe_offline = { path = "../../crates/euterpe_offline" }

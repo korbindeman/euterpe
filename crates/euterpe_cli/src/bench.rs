@@ -7,7 +7,8 @@
 //! 3. run the firmware on QEMU's `mps2-an500` with the plugin, which counts
 //!    instructions between the firmware's marker functions
 //! 4. disassemble the firmware and walk the call graph from each device's
-//!    `Processor::process`, looking for panics, soft float, f64 and allocation
+//!    measured call (`euterpe_bench::Hot<Graph>::process`, kept out of line
+//!    so it always exists), looking for panics, soft float, f64 and allocation
 //!
 //! Instruction counts are deterministic, so they gate regressions exactly.
 //! They are not cycles: the Cortex-M7 dual-issues, and memory placement and
@@ -606,7 +607,7 @@ impl Disassembly {
     }
 
     fn hot_path(&self, graph: &str) -> HotPath {
-        let root = format!("<{graph} as euterpe_core::processor::Processor>::process");
+        let root = format!("<euterpe_bench::Hot<{graph}>>::process");
         let mut hot = HotPath {
             root: root.clone(),
             ..HotPath::default()
@@ -701,7 +702,8 @@ impl HotPath {
     }
 
     fn ok(&self) -> bool {
-        self.panics.is_empty()
+        self.found
+            && self.panics.is_empty()
             && self.soft_float.is_empty()
             && self.alloc.is_empty()
             && self.f64_insns == 0
@@ -711,12 +713,12 @@ impl HotPath {
         let strs = |v: &[String]| Json::Arr(v.iter().map(Json::str).collect());
         if !self.found {
             return Json::Obj(vec![
-                ("ok", Json::Bool(true)),
+                ("ok", Json::Bool(false)),
                 ("root", Json::str(&self.root)),
                 (
                     "note",
                     Json::str(
-                        "process() was inlined into the bench loop, so it can't be checked on its own",
+                        "the measured call is missing from the firmware, so nothing was checked",
                     ),
                 ),
             ]);
@@ -741,17 +743,17 @@ mod tests {
     use super::*;
 
     const DISASM: &str = "
-00001000 <<demo::Fast as euterpe_core::processor::Processor>::process>:
+00001000 <<euterpe_bench::Hot<demo::Fast>>::process>:
     1000:      \tvmul.f32\ts0, s0, s1
     1004:      \tbl\t0x2000 <helper>     @ imm = #0xff8
-    1008:      \tbne\t0x1000 <<demo::Fast as euterpe_core::processor::Processor>::process+0x0>
+    1008:      \tbne\t0x1000 <<euterpe_bench::Hot<demo::Fast>>::process+0x0>
     100a:      \tbx\tlr
 
 00002000 <helper>:
     2000:      \tvadd.f32\ts0, s0, s1
     2004:      \tbx\tlr
 
-00003000 <<demo::Slow as euterpe_core::processor::Processor>::process>:
+00003000 <<euterpe_bench::Hot<demo::Slow>>::process>:
     3000:      \tvmul.f64\td0, d0, d1
     3004:      \tbl\t0x4000 <core::panicking::panic_bounds_check>
     3008:      \tb.w\t0x5000 <__aeabi_fmul>
@@ -793,9 +795,9 @@ mod tests {
     }
 
     #[test]
-    fn missing_root_is_reported_not_failed() {
+    fn missing_root_fails() {
         let hot = Disassembly::parse(DISASM).hot_path("demo::Inlined");
-        assert!(!hot.found && hot.ok());
+        assert!(!hot.found && !hot.ok());
     }
 
     #[test]

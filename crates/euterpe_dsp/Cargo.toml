@@ -1,0 +1,14 @@
+[package]
+name = "euterpe_dsp"
+description = "Euterpe DSP building blocks: oversampling, and more to come. no_std, allocation-free."
+version.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+euterpe_core = { path = "../euterpe_core" }
+
+[dev-dependencies]
+euterpe_offline = { path = "../euterpe_offline" }

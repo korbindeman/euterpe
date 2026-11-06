@@ -118,7 +118,7 @@ All combinators are generic structs that implement `Processor`.
 | Combinator | Purpose |
 | --- | --- |
 | `#[derive(Chain)]` on a struct | Runs fields in declaration order. Generates `process`, `reset`, `prepare`, latency sum and the nested param tree. Fields stay directly accessible. |
-| `Oversampled<P, const F: usize>` | Polyphase half-band up, `P` at `F`× rate, half-band down. `F` ∈ {2, 4, 8}. Reports its filter latency. |
+| `Oversampled2<P>`, `Oversampled4<P>`, `Oversampled8<P>` | Polyphase half-band up, `P` at 2, 4 or 8× rate, half-band down. Nested `Oversample2x<P, N>` stages (stable Rust has no type-level `F` → stages mapping). Reports its exact filter latency. *Done in `euterpe_dsp`.* |
 | `Parallel<A, B, M>` | Splits, processes both, recombines with mixer `M`. Inserts delay compensation from `latency()`. |
 | `Bypass<P>` | Click-free crossfade between `P` and dry, latency-compensated. |
 | `Switch<(A, B, ...)>` | Selects one of several processors, e.g. amp types. Static dispatch, crossfade on change. |
@@ -131,7 +131,7 @@ Example device graph:
 #[derive(Chain)]
 pub struct Combo {
     pub input: InputStage,
-    pub amp: Switch<(Oversampled<Champ, 4>, Oversampled<TweedDeluxe, 4>, Oversampled<Ac30, 4>)>,
+    pub amp: Switch<(Oversampled4<Champ>, Oversampled4<TweedDeluxe>, Oversampled4<Ac30>)>,
     pub cab: Convolver<2048>,
     pub reverb: SpringReverb,
     pub out: OutputStage,
@@ -264,7 +264,7 @@ specs/
    - *`euterpe_desktop` exists too: any registered device through cpal, with an egui panel generated from the schema (sliders move in normalized position, so tapers apply), lock-free parameter slots, and devices switched at runtime behind one virtual call per block. Devices are listed once, in `euterpe_registry`. `Device::Graph` is now `Send + 'static` so a host can move it to its audio thread.*
 3. **Wrap the existing processors** in `PerSample` so the preamp keeps working. Move the preamp into `devices/preamp`.
 4. **Port `CabSim`** to a native block `Convolver`: real FFT, work amortized across blocks, an optional direct-form head for low latency.
-5. **`Oversampled` and `fastmath`**, verified with the aliasing metric.
+5. **`Oversampled` and `fastmath`**, verified with the aliasing metric. *`Oversampled` done: `demo.drive4x` (drive 24 dB, -6 dBFS) has audible aliasing of -55 dB at 6 kHz and -39 dB at 10 kHz, against -13 and -9 dB unoversampled; 8x reaches -110 and -70 dB. 4x costs about 20k instructions per block (10% of the budget), most of it in the first half-band stage.*
 6. **Amp processors:** Champ, then Tweed Deluxe, then AC30, then generalize into the configurable amp engine.
 7. **`devices/combo`** on the Daisy, with `bench` numbers against its budget.
 

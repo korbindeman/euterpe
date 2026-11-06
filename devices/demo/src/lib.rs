@@ -3,7 +3,9 @@
 //!
 //! - `demo.gain`: a smoothed gain stage
 //! - `demo.drive`: tanh saturation with drive and output level. Not
-//!   oversampled yet, so it aliases at high drive.
+//!   oversampled, so it aliases at high drive.
+//! - `demo.drive4x`: the same [`Drive`], run at 4x through
+//!   [`euterpe_dsp::Oversampled4`]. Wrapping is the whole change.
 
 #![no_std]
 // An unsuffixed float literal falls back to f64, which is soft-float on the
@@ -113,6 +115,16 @@ impl Device for DriveDevice {
     type Graph = Drive;
 }
 
+/// `demo.drive4x`
+pub struct Drive4xDevice;
+
+impl Device for Drive4xDevice {
+    const NAME: &'static str = "demo.drive4x";
+    const DESCRIPTION: &'static str =
+        "demo.drive at 4x oversampling: the same tanh, without the aliasing.";
+    type Graph = euterpe_dsp::Oversampled4<Drive>;
+}
+
 #[cfg(test)]
 mod tests {
     extern crate std;
@@ -131,6 +143,7 @@ mod tests {
     #[test]
     fn drive_passes_invariants() {
         check_processor::<Drive>(&CheckOptions::default()).unwrap();
+        check_processor::<<Drive4xDevice as Device>::Graph>(&CheckOptions::default()).unwrap();
     }
 
     #[test]
@@ -221,6 +234,28 @@ mod tests {
         assert!(points[0].alias_db < points[2].alias_db, "{points:?}");
         for a in &points[1..] {
             assert!(a.alias_db > -60.0, "aliasing should be measurable: {a:?}");
+        }
+    }
+
+    /// The same drive at 4x: audible aliasing drops by 40 dB or more where
+    /// the plain one is worst (-13 dB at 6 kHz, -9 dB at 10 kHz).
+    #[test]
+    fn drive4x_cuts_audible_aliasing() {
+        use euterpe_offline::analyze::{self, Setup};
+        let mut p = DriveParams::default();
+        p.set_str("drive", "24").unwrap();
+        let freqs = [2_000.0, 6_000.0, 10_000.0];
+        let setup = Setup::default();
+        let plain = analyze::aliasing::<Drive>(&p, &setup, &freqs, -6.0);
+        let os = analyze::aliasing::<<Drive4xDevice as Device>::Graph>(&p, &setup, &freqs, -6.0);
+        for (a, b) in plain.iter().zip(&os) {
+            assert!(b.audible_alias_db < -38.0, "{b:?}");
+            assert!(
+                b.audible_alias_db < a.audible_alias_db - 25.0,
+                "{a:?} {b:?}"
+            );
+            // Same fundamental: the wrapper is transparent in the band.
+            assert!((a.fundamental_db - b.fundamental_db).abs() < 0.01);
         }
     }
 }

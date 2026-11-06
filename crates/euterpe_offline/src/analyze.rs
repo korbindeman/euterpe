@@ -27,6 +27,8 @@ pub const FRAME: usize = 16_384;
 const LOBE: usize = 4;
 /// Harmonics followed when looking for aliases.
 const MAX_HARMONIC: usize = 64;
+/// Top of the audible band, for the `audible_*` aliasing figures.
+pub const AUDIBLE_HZ: f64 = 20_000.0;
 
 /// Settings shared by every suite.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -384,6 +386,13 @@ pub struct AliasPoint {
     /// The loudest single alias, relative to the fundamental.
     pub worst_alias_db: f64,
     pub worst_alias_freq: f64,
+    /// [`Self::alias_db`] counting only aliases below [`AUDIBLE_HZ`]. An
+    /// oversampler's half-band filters leave aliases between 20 kHz and
+    /// Nyquist, from harmonics in their transition band; this leaves them out.
+    pub audible_alias_db: f64,
+    /// The loudest alias below [`AUDIBLE_HZ`], relative to the fundamental.
+    pub worst_audible_alias_db: f64,
+    pub worst_audible_alias_freq: f64,
     /// Everything else (noise, and components that are neither), relative to
     /// the fundamental.
     pub residual_db: f64,
@@ -431,21 +440,32 @@ pub fn aliasing<P: Processor + Default>(
                 r * r + i * i
             };
             let fundamental = s.energy(bin);
-            let (mut harmonic, mut alias, mut residual) = (0.0, 0.0, 0.0);
+            let audible = |k: usize| k as f64 * setup.bin_hz() < AUDIBLE_HZ;
+            let (mut harmonic, mut alias, mut audible_alias, mut residual) = (0.0, 0.0, 0.0, 0.0);
             for (k, &l) in label.iter().enumerate() {
                 let near_fundamental = k.abs_diff(bin) <= LOBE;
                 let near_dc = k <= LOBE;
                 match l {
                     _ if near_fundamental || near_dc => {}
                     1 => harmonic += power(k),
-                    2 => alias += power(k),
+                    2 => {
+                        alias += power(k);
+                        if audible(k) {
+                            audible_alias += power(k);
+                        }
+                    }
                     _ => residual += power(k),
                 }
             }
-            let (worst_alias_bin, worst) = aliases
-                .iter()
-                .map(|&a| (a, s.energy(a)))
-                .fold((0, 0.0), |best, x| if x.1 > best.1 { x } else { best });
+            let loudest = |only_audible: bool| {
+                aliases
+                    .iter()
+                    .filter(|&&a| !only_audible || audible(a))
+                    .map(|&a| (a, s.energy(a)))
+                    .fold((0, 0.0), |best, x| if x.1 > best.1 { x } else { best })
+            };
+            let (worst_alias_bin, worst) = loudest(false);
+            let (worst_audible_bin, worst_audible) = loudest(true);
             AliasPoint {
                 freq: bin as f64 * setup.bin_hz(),
                 fundamental_db: db(magnitude(s.at(bin))),
@@ -453,6 +473,9 @@ pub fn aliasing<P: Processor + Default>(
                 alias_db: power_db(alias / fundamental),
                 worst_alias_db: power_db(worst / fundamental),
                 worst_alias_freq: worst_alias_bin as f64 * setup.bin_hz(),
+                audible_alias_db: power_db(audible_alias / fundamental),
+                worst_audible_alias_db: power_db(worst_audible / fundamental),
+                worst_audible_alias_freq: worst_audible_bin as f64 * setup.bin_hz(),
                 residual_db: power_db(residual / fundamental),
             }
         })

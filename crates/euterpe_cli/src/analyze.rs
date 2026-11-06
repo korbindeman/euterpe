@@ -14,7 +14,8 @@ pub const HELP: &str = "\
           response  gain and phase vs frequency, third octaves 20 Hz-20 kHz
           thd       harmonic distortion of a sine vs input level
           aliasing  energy where harmonics above Nyquist fold back, per
-                    test frequency, relative to the fundamental
+                    test frequency, relative to the fundamental; also
+                    counted below 20 kHz only (audible_alias_db)
           null      render --in, compare with --reference
 
 ANALYZE OPTIONS:
@@ -216,6 +217,15 @@ impl Visitor for AnalyzeJob {
                                         ("alias_db", num(round(p.alias_db, 2))),
                                         ("worst_alias_db", num(round(p.worst_alias_db, 2))),
                                         ("worst_alias_freq", num(round(p.worst_alias_freq, 1))),
+                                        ("audible_alias_db", num(round(p.audible_alias_db, 2))),
+                                        (
+                                            "worst_audible_alias_db",
+                                            num(round(p.worst_audible_alias_db, 2)),
+                                        ),
+                                        (
+                                            "worst_audible_alias_freq",
+                                            num(round(p.worst_audible_alias_freq, 1)),
+                                        ),
                                         ("residual_db", num(round(p.residual_db, 2))),
                                     ])
                                 })

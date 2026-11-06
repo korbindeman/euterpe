@@ -46,6 +46,7 @@ macro_rules! devices {
 devices! {
     euterpe_demo::GainDevice,
     euterpe_demo::DriveDevice,
+    euterpe_demo::Drive4xDevice,
 }
 
 #[cfg(test)]

@@ -95,10 +95,25 @@ pub fn bench_device<D: Device>(probe: &mut impl Probe, sink: &mut impl Sink) {
     }
 }
 
+/// The measured call, kept out of line.
+///
+/// `euterpe bench` walks the call graph from this symbol
+/// (`<euterpe_bench::Hot<Graph>>::process`). Without it the optimizer may
+/// inline the graph's `process` into the bench loop, and there would be no
+/// function left to check.
+pub struct Hot<P>(pub P);
+
+impl<P: Processor> Hot<P> {
+    #[inline(never)]
+    pub fn process(&mut self, buf: &mut Block, params: &P::Params) {
+        self.0.process(buf, params);
+    }
+}
+
 fn run<P: Processor + Default>(scenario: Scenario, probe: &mut impl Probe) -> Option<u64> {
-    let mut processor = P::default();
-    processor.prepare(&Ctx::new(SAMPLE_RATE));
-    processor.reset();
+    let mut processor = Hot(P::default());
+    processor.0.prepare(&Ctx::new(SAMPLE_RATE));
+    processor.0.reset();
     let mut params = P::Params::default();
     let mut noise = Noise(0x1234_5678);
     let mut buf: Block = [0.0; BLOCK];
