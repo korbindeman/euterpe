@@ -522,7 +522,9 @@ fn write_baseline(path: &Path, measurements: &[Measurement]) -> Result<(), Strin
             "{} {} {}",
             m.device,
             m.scenario,
-            round1(m.insns_per_block)
+            // Exact: a total over 64 blocks has a short, exact decimal
+            // form, and the comparison has zero tolerance by default.
+            m.insns_per_block
         );
     }
     fs::write(path, text).map_err(|e| format!("writing {}: {e}", path.display()))

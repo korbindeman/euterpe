@@ -36,10 +36,10 @@ This repo is becoming **Euterpe**, a toolkit for building audio hardware. The de
 
 - **`crates/euterpe_core`** (`no_std`): `Processor` (block-based, `BLOCK = 32`), `SampleProcessor` + `PerSample`, `Ctx`, `params!` / `ParamSet` schemas, `Smoother` / `Ramp`, `fastmath` (tested error bounds), `Device`.
 - **`crates/euterpe_offline`**: WAV I/O, `render` / `render_with` (latency-compensated, deterministic), test signals, `check::check_processor`, and `analyze` (response, THD, aliasing, null).
-- **`crates/euterpe_dsp`** (`no_std`): DSP blocks. So far `Oversampled2/4/8<P>`: polyphase half-band stages (taps from `tools/design/halfband.py`, ≥100 dB, flat to 20 kHz), exact integer latency.
+- **`crates/euterpe_dsp`** (`no_std`): DSP blocks. `Oversampled2/4/8<P>`: polyphase half-band stages (taps from `tools/design/halfband.py`, ≥100 dB, flat to 20 kHz), exact integer latency. `Convolver<P>`: zero-latency uniformly partitioned convolution (`P` × 32 taps) on its own 64-point real FFT (`fft`, compile-time twiddles).
 - **`crates/euterpe_registry`** (`no_std`): the one list of devices, read by every tool.
 - **`crates/euterpe_cli`**: the `euterpe` binary.
-- **`devices/demo`**: `demo.gain`, `demo.drive` and `demo.drive4x` (the drive wrapped in `Oversampled4`), the reference examples for writing a processor and a device.
+- **`devices/demo`**: `demo.gain`, `demo.drive`, `demo.drive4x` (the drive wrapped in `Oversampled4`) and `demo.cab` (2048-tap Deluxe Reverb IR through `Convolver<64>`), the reference examples for writing a processor and a device.
 - **`crates/euterpe_bench`** (`no_std`): the bench harness (`static` and `automated` scenarios), shared by every bench target.
 - **`crates/euterpe_bench_qemu`**: bench firmware for QEMU's `mps2-an500` (a Cortex-M7). Run through `euterpe bench`, never directly.
 - **`crates/euterpe_daisy`**: the Daisy Seed `Platform`. Runs a device on the codec, measures every block with the DWT cycle counter, blinks the LED fast if a block goes over budget.

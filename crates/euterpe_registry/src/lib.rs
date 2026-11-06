@@ -47,6 +47,7 @@ devices! {
     euterpe_demo::GainDevice,
     euterpe_demo::DriveDevice,
     euterpe_demo::Drive4xDevice,
+    euterpe_demo::CabDevice,
 }
 
 #[cfg(test)]

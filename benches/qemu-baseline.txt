@@ -3,6 +3,8 @@
 demo.gain static 151
 demo.gain automated 208
 demo.drive static 1701
-demo.drive automated 1545.5
+demo.drive automated 1545.484375
 demo.drive4x static 20446
-demo.drive4x automated 19876.9
+demo.drive4x automated 19876.90625
+demo.cab static 31335.671875
+demo.cab automated 31356.671875

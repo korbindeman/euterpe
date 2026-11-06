@@ -6,6 +6,8 @@
 //!   oversampled, so it aliases at high drive.
 //! - `demo.drive4x`: the same [`Drive`], run at 4x through
 //!   [`euterpe_dsp::Oversampled4`]. Wrapping is the whole change.
+//! - `demo.cab`: a 2048-tap cabinet IR through [`euterpe_dsp::Convolver`],
+//!   with an output level.
 
 #![no_std]
 // An unsuffixed float literal falls back to f64, which is soft-float on the
@@ -125,10 +127,73 @@ impl Device for Drive4xDevice {
     type Graph = euterpe_dsp::Oversampled4<Drive>;
 }
 
+// ---------------------------------------------------------------------------
+// Cab
+// ---------------------------------------------------------------------------
+
+/// The Deluxe Reverb IR the legacy preamp ships, resampled to 48 kHz and
+/// peak-normalized at build time.
+pub static DELUXE_REVERB: [f32; 2048] = ir_embed::embed_ir!("ir/deluxe_reverb.wav", 2048);
+
+params! {
+    pub struct CabParams {
+        level_db: f32 = ("level", "Level", ParamKind::float(-36.0, 6.0, -12.0).unit("dB").smooth_ms(20.0)),
+    }
+}
+
+/// A cabinet: convolution with [`DELUXE_REVERB`], then a smoothed level.
+pub struct Cab {
+    ir: euterpe_dsp::Convolver<64>,
+    level: Smoother,
+}
+
+impl Default for Cab {
+    fn default() -> Self {
+        Self {
+            ir: euterpe_dsp::Convolver::with_ir(&DELUXE_REVERB),
+            level: Smoother::default(),
+        }
+    }
+}
+
+impl Processor for Cab {
+    type Params = CabParams;
+
+    fn prepare(&mut self, ctx: &Ctx) {
+        self.ir.reset();
+        self.level.prepare(ctx, CabParams::smooth_ms("level"));
+    }
+
+    fn reset(&mut self) {
+        self.ir.reset();
+        self.level.reset();
+    }
+
+    #[inline]
+    fn process(&mut self, buf: &mut Block, params: &CabParams) {
+        self.ir.process(buf);
+        let mut level = self.level.block(fastmath::db_to_gain(params.level_db));
+        for s in buf.iter_mut() {
+            *s *= level.tick();
+        }
+    }
+}
+
+/// `demo.cab`
+pub struct CabDevice;
+
+impl Device for CabDevice {
+    const NAME: &'static str = "demo.cab";
+    const DESCRIPTION: &'static str =
+        "Deluxe Reverb cabinet IR (2048 taps) with output level. Zero latency.";
+    type Graph = Cab;
+}
+
 #[cfg(test)]
 mod tests {
     extern crate std;
     use std::vec;
+    use std::vec::Vec;
 
     use super::*;
     use euterpe_core::ParamSet;
@@ -257,5 +322,32 @@ mod tests {
             // Same fundamental: the wrapper is transparent in the band.
             assert!((a.fundamental_db - b.fundamental_db).abs() < 0.01);
         }
+    }
+
+    #[test]
+    fn cab_passes_invariants() {
+        check_processor::<Cab>(&CheckOptions::default()).unwrap();
+    }
+
+    /// The new convolver nulls against the legacy `CabSim` (256-sample
+    /// blocks, 256 samples of latency) on the same IR.
+    #[test]
+    fn cab_nulls_against_the_legacy_cab_sim() {
+        use dsp::Process;
+        let mut legacy = dsp::cab_sim::CabSim::new();
+        legacy.set_ir(&DELUXE_REVERB);
+        legacy.params_mut().enabled.set(true);
+        let x = signal::sine(220.0, 0.5, 9_600, 48_000);
+        let x: Vec<f32> = x
+            .iter()
+            .enumerate()
+            .map(|(i, &s)| s + 0.2 * ((i * 7919 % 211) as f32 / 105.0 - 1.0))
+            .collect();
+        let old: Vec<f32> = x.iter().map(|&s| legacy.process(s)).collect();
+        let mut p = CabParams::default();
+        p.set_str("level", "0").unwrap();
+        let new = render(&mut Cab::default(), &p, &x, &RenderOptions::new(48_000));
+        let r = euterpe_offline::analyze::null(&new[..9_600 - 256], &old[256..], false);
+        assert!(r.residual_rms_db < -90.0, "{r:?}");
     }
 }
