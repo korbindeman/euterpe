@@ -6,5 +6,7 @@ demo.drive static 1701
 demo.drive automated 1545.484375
 demo.drive4x static 20446
 demo.drive4x automated 19876.90625
-demo.cab static 31335.671875
-demo.cab automated 31356.671875
+demo.cab static 31350.671875
+demo.cab automated 31371.671875
+demo.rig static 51791.671875
+demo.rig automated 51243.578125

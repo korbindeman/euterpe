@@ -117,7 +117,7 @@ All combinators are generic structs that implement `Processor`.
 
 | Combinator | Purpose |
 | --- | --- |
-| `#[derive(Chain)]` on a struct | Runs fields in declaration order. Generates `process`, `reset`, `prepare`, latency sum and the nested param tree. Fields stay directly accessible. |
+| `#[derive(Chain)]` on a struct | Runs fields in declaration order. Generates `process`, `reset`, `prepare`, latency sum and the nested param tree (`<Name>Params`, or `#[chain(params = X)]`). Fields stay directly accessible. *Done.* |
 | `Oversampled2<P>`, `Oversampled4<P>`, `Oversampled8<P>` | Polyphase half-band up, `P` at 2, 4 or 8× rate, half-band down. Nested `Oversample2x<P, N>` stages (stable Rust has no type-level `F` → stages mapping). Reports its exact filter latency. *Done in `euterpe_dsp`.* |
 | `Parallel<A, B, M>` | Splits, processes both, recombines with mixer `M`. Inserts delay compensation from `latency()`. |
 | `Bypass<P>` | Click-free crossfade between `P` and dry, latency-compensated. |
@@ -258,7 +258,7 @@ specs/
 
 ## Migration from the current repo
 
-1. **Core first.** Create `core` with `Processor`, `Block`, `Ctx`, `PerSample`, and port `params` to the derive-based schema. *Done as `euterpe_core`. Params use the `params!` macro for now; `#[derive(Params)]` and `#[derive(Chain)]` arrive with the `macros` crate.*
+1. **Core first.** Create `core` with `Processor`, `Block`, `Ctx`, `PerSample`, and port `params` to the derive-based schema. *Done as `euterpe_core`. `#[derive(Params)]` and `#[derive(Chain)]` live in `euterpe_macros` and are re-exported from `euterpe_core`; `params!` remains for flat sets. Nested schemas are composed in `const` (ids prefixed by field name, duplicates rejected at compile time), so a chain's schema is still one `&'static` slice. `demo.rig` (drive4x into cab) is a chain; it costs exactly the sum of its stages.*
 2. **Offline platform and `euterpe render` / `analyze`.** Everything after this is verified through them. *`render`, `schema`, `devices` and the generic `check_processor` invariants are done (the CLI is the `euterpe_cli` crate rather than an xtask). `analyze` is done too: `response`, `thd`, `aliasing` and `null` live in `euterpe_offline::analyze` and are exposed as `euterpe analyze <device> <suite>`. Baseline for `Oversampled`: unoversampled `demo.drive` at drive 24 dB and -6 dBFS aliases at -27.7 dB (2 kHz), -13.1 dB (6 kHz) and -8.3 dB (10 kHz), relative to the fundamental.*
    - *Pulled forward: `euterpe bench` (QEMU instruction counts, hot-path checks, baseline) and a minimal `Platform` trait with `euterpe_daisy`, which runs a device on the Seed and measures each block with DWT. The firmware target is built with `target-cpu=cortex-m7`, so f64 is hardware, not soft float. Still to do: calibrating cycles per instruction on the board, and panel controls.*
    - *`euterpe_desktop` exists too: any registered device through cpal, with an egui panel generated from the schema (sliders move in normalized position, so tapers apply), lock-free parameter slots, and devices switched at runtime behind one virtual call per block. Devices are listed once, in `euterpe_registry`. `Device::Graph` is now `Send + 'static` so a host can move it to its audio thread.*

@@ -8,6 +8,7 @@
 //!   [`euterpe_dsp::Oversampled4`]. Wrapping is the whole change.
 //! - `demo.cab`: a 2048-tap cabinet IR through [`euterpe_dsp::Convolver`],
 //!   with an output level.
+//! - `demo.rig`: `demo.drive4x` into `demo.cab`, a `#[derive(Chain)]`.
 
 #![no_std]
 // An unsuffixed float literal falls back to f64, which is soft-float on the
@@ -15,17 +16,17 @@
 #![cfg_attr(not(test), warn(clippy::default_numeric_fallback))]
 
 use euterpe_core::{
-    Block, Ctx, Device, ParamKind, ParamSet, Processor, Smoother, fastmath, params,
+    Block, Chain, Ctx, Device, ParamKind, ParamSet, Params, Processor, Smoother, fastmath,
 };
 
 // ---------------------------------------------------------------------------
 // Gain
 // ---------------------------------------------------------------------------
 
-params! {
-    pub struct GainParams {
-        gain_db: f32 = ("gain", "Gain", ParamKind::float(-60.0, 12.0, 0.0).unit("dB").smooth_ms(20.0)),
-    }
+#[derive(Params, Clone, Debug, PartialEq)]
+pub struct GainParams {
+    #[param(id = "gain", label = "Gain", kind = ParamKind::float(-60.0, 12.0, 0.0).unit("dB").smooth_ms(20.0))]
+    pub gain_db: f32,
 }
 
 /// A smoothed gain stage.
@@ -70,11 +71,12 @@ impl Device for GainDevice {
 // Drive
 // ---------------------------------------------------------------------------
 
-params! {
-    pub struct DriveParams {
-        drive_db: f32 = ("drive", "Drive", ParamKind::float(0.0, 36.0, 12.0).unit("dB").smooth_ms(20.0)),
-        level_db: f32 = ("level", "Level", ParamKind::float(-24.0, 6.0, -6.0).unit("dB").smooth_ms(20.0)),
-    }
+#[derive(Params, Clone, Debug, PartialEq)]
+pub struct DriveParams {
+    #[param(id = "drive", label = "Drive", kind = ParamKind::float(0.0, 36.0, 12.0).unit("dB").smooth_ms(20.0))]
+    pub drive_db: f32,
+    #[param(id = "level", label = "Level", kind = ParamKind::float(-24.0, 6.0, -6.0).unit("dB").smooth_ms(20.0))]
+    pub level_db: f32,
 }
 
 /// Symmetric tanh saturation: `level * tanh(drive * x)`.
@@ -135,10 +137,10 @@ impl Device for Drive4xDevice {
 /// peak-normalized at build time.
 pub static DELUXE_REVERB: [f32; 2048] = ir_embed::embed_ir!("ir/deluxe_reverb.wav", 2048);
 
-params! {
-    pub struct CabParams {
-        level_db: f32 = ("level", "Level", ParamKind::float(-36.0, 6.0, -12.0).unit("dB").smooth_ms(20.0)),
-    }
+#[derive(Params, Clone, Debug, PartialEq)]
+pub struct CabParams {
+    #[param(id = "level", label = "Level", kind = ParamKind::float(-36.0, 6.0, -12.0).unit("dB").smooth_ms(20.0))]
+    pub level_db: f32,
 }
 
 /// A cabinet: convolution with [`DELUXE_REVERB`], then a smoothed level.
@@ -189,7 +191,33 @@ impl Device for CabDevice {
     type Graph = Cab;
 }
 
+// ---------------------------------------------------------------------------
+// Rig: a chain
+// ---------------------------------------------------------------------------
+
+/// The 4x drive into the cab. `#[derive(Chain)]` writes the `Processor`
+/// (stages in field order, latency summed) and [`RigParams`], whose ids are
+/// `drive.drive`, `drive.level` and `cab.level`.
+#[derive(Chain, Default)]
+pub struct Rig {
+    pub drive: euterpe_dsp::Oversampled4<Drive>,
+    pub cab: Cab,
+}
+
+/// `demo.rig`
+pub struct RigDevice;
+
+impl Device for RigDevice {
+    const NAME: &'static str = "demo.rig";
+    const DESCRIPTION: &'static str = "demo.drive4x into demo.cab, composed with #[derive(Chain)].";
+    type Graph = Rig;
+}
+
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "tests compare exact, bit-identical results on purpose"
+)]
 mod tests {
     extern crate std;
     use std::vec;
@@ -372,6 +400,34 @@ mod tests {
                 "{}",
                 fx.excerpt.id
             );
+        }
+    }
+
+    #[test]
+    fn rig_chains_drive_into_cab() {
+        check_processor::<Rig>(&CheckOptions::default()).unwrap();
+        let ids: Vec<&str> = RigParams::SCHEMA.iter().map(|d| d.id).collect();
+        assert_eq!(ids, ["drive.drive", "drive.level", "cab.level"]);
+        assert_eq!(Rig::default().latency(), 46);
+
+        // The chain is exactly its stages run one after the other.
+        let mut p = RigParams::default();
+        p.set_str("drive.drive", "24").unwrap();
+        let ctx = Ctx::new(48_000.0);
+        let mut rig = Rig::default();
+        let mut drive = <Drive4xDevice as Device>::Graph::default();
+        let mut cab = Cab::default();
+        rig.prepare(&ctx);
+        drive.prepare(&ctx);
+        cab.prepare(&ctx);
+        let x = signal::sine(330.0, 0.3, 4_800, 48_000);
+        for block in x.chunks_exact(euterpe_core::BLOCK) {
+            let mut a: Block = block.try_into().unwrap();
+            let mut b = a;
+            rig.process(&mut a, &p);
+            drive.process(&mut b, &p.drive);
+            cab.process(&mut b, &p.cab);
+            assert_eq!(a, b);
         }
     }
 }

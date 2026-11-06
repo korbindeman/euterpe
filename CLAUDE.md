@@ -34,12 +34,13 @@ just test
 
 This repo is becoming **Euterpe**, a toolkit for building audio hardware. The design is in `specs/ARCHITECTURE.md`; read it before adding processors or devices. New work goes into the `euterpe_*` crates. The older crates below are migrated step by step.
 
-- **`crates/euterpe_core`** (`no_std`): `Processor` (block-based, `BLOCK = 32`), `SampleProcessor` + `PerSample`, `Ctx`, `params!` / `ParamSet` schemas, `Smoother` / `Ramp`, `fastmath` (tested error bounds), `Device`.
+- **`crates/euterpe_core`** (`no_std`): `Processor` (block-based, `BLOCK = 32`), `SampleProcessor` + `PerSample`, `Ctx`, `#[derive(Params)]` / `ParamSet` schemas (and the older `params!`), `#[derive(Chain)]`, `Smoother` / `Ramp`, `fastmath` (tested error bounds), `Device`.
 - **`crates/euterpe_offline`**: WAV I/O, `render` / `render_with` (latency-compensated, deterministic), test signals, `check::check_processor`, and `analyze` (response, THD, aliasing, null).
+- **`crates/euterpe_macros`**: the proc macros behind `#[derive(Params)]` and `#[derive(Chain)]`, re-exported by `euterpe_core`. Nested schemas are composed at compile time (`euterpe_core::params::compose`): ids get the field name as a prefix (`drive.level`), and duplicate ids are a compile error.
 - **`crates/euterpe_dsp`** (`no_std`): DSP blocks. `Oversampled2/4/8<P>`: polyphase half-band stages (taps from `tools/design/halfband.py`, ≥100 dB, flat to 20 kHz), exact integer latency. `Convolver<P>`: zero-latency uniformly partitioned convolution (`P` × 32 taps) on its own 64-point real FFT (`fft`, compile-time twiddles).
 - **`crates/euterpe_registry`** (`no_std`): the one list of devices, read by every tool.
 - **`crates/euterpe_cli`**: the `euterpe` binary.
-- **`devices/demo`**: `demo.gain`, `demo.drive`, `demo.drive4x` (the drive wrapped in `Oversampled4`) and `demo.cab` (2048-tap Deluxe Reverb IR through `Convolver<64>`), the reference examples for writing a processor and a device.
+- **`devices/demo`**: `demo.gain`, `demo.drive`, `demo.drive4x` (the drive wrapped in `Oversampled4`) and `demo.cab` (2048-tap Deluxe Reverb IR through `Convolver<64>`) and `demo.rig` (drive4x into cab, a `#[derive(Chain)]`), the reference examples for writing a processor and a device.
 - **`crates/euterpe_bench`** (`no_std`): the bench harness (`static` and `automated` scenarios), shared by every bench target.
 - **`crates/euterpe_bench_qemu`**: bench firmware for QEMU's `mps2-an500` (a Cortex-M7). Run through `euterpe bench`, never directly.
 - **`crates/euterpe_daisy`**: the Daisy Seed `Platform`. Runs a device on the codec, measures every block with the DWT cycle counter, blinks the LED fast if a block goes over budget.
@@ -70,7 +71,7 @@ Builds `euterpe_bench_qemu`, runs it on QEMU with the `tools/qemu/euterpe_insn.c
 
 ### Rules for new processors
 
-1. Implement `Processor` (or `SampleProcessor` wrapped in `PerSample`) with params declared via `params!`. No allocation, panics or dynamic dispatch in `process`.
+1. Implement `Processor` (or `SampleProcessor` wrapped in `PerSample`) with params declared via `#[derive(Params)]`. Compose processors with `#[derive(Chain)]` rather than by hand. No allocation, panics or dynamic dispatch in `process`.
 2. Smooth audible params with `Smoother`: `prepare` it with `Params::smooth_ms(id)`, call `reset()` from the processor's `reset`, and call `block(target)` once per block.
 3. Use `euterpe_core::fastmath` in the hot path, not `micromath` or `std` math.
 4. Add a test that calls `euterpe_offline::check::check_processor::<YourProcessor>`, plus tests for the processor's actual behavior. Filters and nonlinear processors also get `analyze` tests (`response`, `thd`, `aliasing`) with numbers from a closed form or an independent reference.

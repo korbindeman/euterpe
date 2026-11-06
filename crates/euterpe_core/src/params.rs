@@ -404,6 +404,155 @@ impl ParamField for u8 {
     }
 }
 
+/// Compile-time composition of schemas, used by `#[derive(Params)]` and
+/// `#[derive(Chain)]` to build one flat schema from nested ones.
+///
+/// Nested ids get their field's name as a prefix (`"amp.drive"`). The
+/// prefixed strings are built in a `const` byte buffer, so the result is
+/// still a `&'static [ParamDesc]` with no runtime work.
+///
+/// Two parameters with the same id are a compile error:
+///
+/// ```compile_fail
+/// use euterpe_core::{ParamKind, ParamSet, Params};
+///
+/// #[derive(Params, Clone)]
+/// struct Clash {
+///     #[param(id = "x", label = "A", kind = ParamKind::toggle(false))]
+///     a: bool,
+///     #[param(id = "x", label = "B", kind = ParamKind::toggle(false))]
+///     b: bool,
+/// }
+/// let _ = Clash::SCHEMA;
+/// ```
+pub mod compose {
+    use super::{ParamDesc, ParamKind};
+
+    /// One piece of a composed schema: `schema`'s ids, each prefixed with
+    /// `prefix` and a dot (no prefix when `prefix` is empty).
+    pub struct Part {
+        pub prefix: &'static str,
+        pub schema: &'static [ParamDesc],
+    }
+
+    const fn prefix_len(prefix: &str) -> usize {
+        if prefix.is_empty() {
+            0
+        } else {
+            prefix.len() + 1
+        }
+    }
+
+    /// Parameters in all parts.
+    pub const fn count(parts: &[Part]) -> usize {
+        let mut n = 0;
+        let mut i = 0;
+        while i < parts.len() {
+            n += parts[i].schema.len();
+            i += 1;
+        }
+        n
+    }
+
+    /// Bytes of all prefixed ids together.
+    pub const fn ids_len(parts: &[Part]) -> usize {
+        let mut n = 0;
+        let mut i = 0;
+        while i < parts.len() {
+            let mut j = 0;
+            while j < parts[i].schema.len() {
+                n += prefix_len(parts[i].prefix) + parts[i].schema[j].id.len();
+                j += 1;
+            }
+            i += 1;
+        }
+        n
+    }
+
+    const fn copy(dst: &mut [u8], at: usize, src: &[u8]) -> usize {
+        let mut k = 0;
+        while k < src.len() {
+            dst[at + k] = src[k];
+            k += 1;
+        }
+        at + k
+    }
+
+    /// All prefixed ids, back to back. `T` must be [`ids_len`].
+    pub const fn ids<const T: usize>(parts: &[Part]) -> [u8; T] {
+        let mut buf = [0u8; T];
+        let mut at = 0;
+        let mut i = 0;
+        while i < parts.len() {
+            let mut j = 0;
+            while j < parts[i].schema.len() {
+                if !parts[i].prefix.is_empty() {
+                    at = copy(&mut buf, at, parts[i].prefix.as_bytes());
+                    at = copy(&mut buf, at, b".");
+                }
+                at = copy(&mut buf, at, parts[i].schema[j].id.as_bytes());
+                j += 1;
+            }
+            i += 1;
+        }
+        assert!(at == T, "ids buffer has the wrong length");
+        buf
+    }
+
+    const fn eq(a: &[u8], b: &[u8]) -> bool {
+        if a.len() != b.len() {
+            return false;
+        }
+        let mut k = 0;
+        while k < a.len() {
+            if a[k] != b[k] {
+                return false;
+            }
+            k += 1;
+        }
+        true
+    }
+
+    /// The composed schema, ids pointing into `ids`. `L` must be [`count`].
+    /// Fails to compile if two parameters end up with the same id.
+    pub const fn descs<const L: usize>(parts: &[Part], ids: &'static [u8]) -> [ParamDesc; L] {
+        let mut out = [ParamDesc {
+            id: "",
+            label: "",
+            kind: ParamKind::toggle(false),
+        }; L];
+        let mut rest = ids;
+        let mut n = 0;
+        let mut i = 0;
+        while i < parts.len() {
+            let mut j = 0;
+            while j < parts[i].schema.len() {
+                let d = parts[i].schema[j];
+                let (id, tail) = rest.split_at(prefix_len(parts[i].prefix) + d.id.len());
+                rest = tail;
+                let mut k = 0;
+                while k < n {
+                    assert!(!eq(out[k].id.as_bytes(), id), "duplicate parameter id");
+                    k += 1;
+                }
+                let Ok(id) = core::str::from_utf8(id) else {
+                    panic!("parameter id is not UTF-8");
+                };
+                out[n] = ParamDesc {
+                    id,
+                    label: d.label,
+                    kind: d.kind,
+                };
+                n += 1;
+                j += 1;
+            }
+            i += 1;
+        }
+        assert!(n == L, "schema has the wrong length");
+        out
+    }
+}
+
 /// Declare a parameter struct and implement [`ParamSet`] for it.
 ///
 /// Each field is `name: type = ("id", "Label", kind)`, where `type` is `f32`

@@ -11,6 +11,7 @@ members = [
     "crates/ir_embed",
     "crates/euterpe_core",
     "crates/euterpe_dsp",
+    "crates/euterpe_macros",
     "crates/euterpe_offline",
     "crates/euterpe_cli",
     "crates/euterpe_bench",

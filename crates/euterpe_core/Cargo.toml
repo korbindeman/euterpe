@@ -8,3 +8,4 @@ edition.workspace = true
 workspace = true
 
 [dependencies]
+euterpe_macros = { path = "../euterpe_macros" }
