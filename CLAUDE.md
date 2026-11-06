@@ -71,6 +71,10 @@ Builds `euterpe_bench_qemu`, runs it on QEMU with the `tools/qemu/euterpe_insn.c
 5. Register new devices in `crates/euterpe_cli/src/registry.rs` and in `devices!` in `crates/euterpe_bench_qemu/src/main.rs`.
 6. Run `just bench`. The hot path must pass, and the PR states the instructions per block.
 
+### CI and the toolchain
+
+`.github/workflows/ci.yml` runs `just check-format`, `just clippy`, `just check`, `just test` and `just bench` (against the baseline) on every PR. The toolchain is pinned in `rust-toolchain.toml` because a new rustc changes instruction counts. To bump it, change the version, run `just bench-baseline`, and commit both together.
+
 ### Lints
 
 Euterpe crates opt in to `[workspace.lints]` (root `Cargo.toml`) with `[lints] workspace = true`: clippy pedantic, minus the lints that are noise in DSP code. Legacy crates keep clippy's defaults until they are migrated.

@@ -1,0 +1,6 @@
+# Pinned so `euterpe bench` instruction counts only change when code does.
+# Bump deliberately, then run `just bench-baseline` and commit both.
+[toolchain]
+channel = "1.97.0"
+components = ["clippy", "rustfmt", "llvm-tools"]
+targets = ["thumbv7em-none-eabihf"]
