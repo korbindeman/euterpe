@@ -22,6 +22,7 @@ members = [
     "devices/demo_daisy",
     "crates/euterpe_fixtures",
     "devices/demo",
+    "devices/pedals",
 ]
 
 [workspace.package]
@@ -73,6 +74,12 @@ opt-level = 3
 opt-level = 2
 
 [profile.dev.package.euterpe_core]
+opt-level = 3
+
+[profile.dev.package.euterpe_dsp]
+opt-level = 3
+
+[profile.dev.package.euterpe_pedals]
 opt-level = 3
 
 [profile.dev.package.euterpe_offline]

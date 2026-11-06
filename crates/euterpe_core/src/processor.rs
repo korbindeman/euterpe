@@ -36,8 +36,10 @@ impl Ctx {
 
     /// Convert a duration in milliseconds to samples at this rate.
     #[inline]
+    /// Exact when the result is a whole number (`0.001` is not exact in f32,
+    /// so this divides).
     pub fn ms_to_samples(&self, ms: f32) -> f32 {
-        ms * 0.001 * self.sample_rate
+        ms * self.sample_rate / 1000.0
     }
 
     /// The context for a processor running `factor` times faster than this one.

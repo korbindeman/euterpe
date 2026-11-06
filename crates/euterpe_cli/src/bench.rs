@@ -22,6 +22,7 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 use std::{env, fs};
 
+use euterpe_core::device::{GRAPH_ARENA_BYTES, LARGE_GRAPH_ARENA_BYTES};
 use euterpe_core::{BLOCK, Device};
 
 use crate::json::Json;
@@ -175,6 +176,8 @@ pub fn run(opts: &Options) -> Result<(Json, bool), String> {
         let stack_over = stack_bytes.is_none_or(|b| b > STACK_LIMIT_BYTES);
         pass &= !stack_over;
         let graph = graph_bytes.get(*name).copied();
+        let memory = graph.and_then(graph_memory);
+        pass &= memory.is_some();
         devices.push(Json::Obj(vec![
             ("device", Json::str(*name)),
             ("budget_cycles_per_block", Json::num(budget)),
@@ -188,6 +191,7 @@ pub fn run(opts: &Options) -> Result<(Json, bool), String> {
                 "graph_bytes",
                 graph.map_or(Json::Null, |b| Json::num(b as f64)),
             ),
+            ("graph_memory", memory.map_or(Json::Null, Json::str)),
             ("scenarios", Json::Arr(scenarios)),
             ("hot_path", hot.to_json()),
         ]));
@@ -215,7 +219,10 @@ pub fn run(opts: &Options) -> Result<(Json, bool), String> {
         ("stack_limit_bytes", Json::num(STACK_LIMIT_BYTES as f64)),
         (
             "graph_arena_bytes",
-            Json::num(euterpe_core::device::GRAPH_ARENA_BYTES as f64),
+            Json::Obj(vec![
+                ("dtcm", Json::num(GRAPH_ARENA_BYTES as f64)),
+                ("axi_sram", Json::num(LARGE_GRAPH_ARENA_BYTES as f64)),
+            ]),
         ),
         ("firmware", section_sizes(&objdump, &elf)?),
         ("devices", Json::Arr(devices)),
@@ -258,6 +265,19 @@ fn scenario_report(
         }
     }
     (Json::Obj(fields), regressed)
+}
+
+/// Where the Daisy puts a graph of `bytes`: DTCM if it fits, else AXI SRAM,
+/// else nowhere (it doesn't build).
+fn graph_memory(bytes: u64) -> Option<&'static str> {
+    let fits = |arena: usize| u64::try_from(arena).is_ok_and(|a| bytes <= a);
+    if fits(GRAPH_ARENA_BYTES) {
+        Some("dtcm")
+    } else if fits(LARGE_GRAPH_ARENA_BYTES) {
+        Some("axi_sram")
+    } else {
+        None
+    }
 }
 
 fn round1(x: f64) -> f64 {

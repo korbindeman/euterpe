@@ -11,6 +11,8 @@
 //! | [`log2`] | positive normal floats | 4e-6 absolute (f32 rounding of the exponent sum at large magnitudes) |
 //! | [`ln`] | positive normal floats | 3e-6 absolute |
 //! | [`tanh`] | all finite | 3e-7 absolute |
+//! | [`sin_turns`], [`cos_turns`] | `|x| < 2^22` turns | 3e-7 absolute, exactly odd/even, never past ±1 |
+//! | [`tan_pi`] | `[0, 0.49]` | 1.5e-6 relative |
 //! | [`db_to_gain`] | `[-120, 120]` dB | 1e-6 relative |
 //! | [`gain_to_db`] | `>= 1e-6` | 3e-5 dB |
 //!
@@ -111,6 +113,47 @@ fn tanh_magnitude(a: f32) -> f32 {
 #[inline(always)]
 fn tanh_from_exp(e: f32) -> f32 {
     1.0 - 2.0 / (e + 1.0)
+}
+
+/// `sin(2 pi x)`: the sine of `x` turns. Max absolute error 3e-7 for
+/// `|x| < 2^22` (past that, f32 has no fractional turns left). Exactly odd,
+/// exactly 0 at whole and half turns, and never past ±1.
+#[inline]
+pub fn sin_turns(x: f32) -> f32 {
+    // The nearest whole turn away: r in [-0.5, 0.5].
+    let r = x - floor_i32(x + 0.5) as f32;
+    // sin(2 pi a) = sin(2 pi (1/2 - a)): fold onto [0, 1/4].
+    let a = r.abs();
+    let a = a.min(0.5 - a);
+    sin_quarter(a).copysign(r)
+}
+
+/// `cos(2 pi x)`, with the error bound of [`sin_turns`].
+#[inline]
+pub fn cos_turns(x: f32) -> f32 {
+    sin_turns(x + 0.25)
+}
+
+/// `sin(2 pi a)` for `a` in `[0, 1/4]`: odd, degree 9, minimax. At most
+/// 0.99999994 at `a = 1/4`.
+#[inline(always)]
+#[expect(
+    clippy::approx_constant,
+    reason = "a fitted coefficient, one ulp below TAU"
+)]
+fn sin_quarter(a: f32) -> f32 {
+    let a2 = a * a;
+    a * (6.283_185 + a2 * (-41.341_656 + a2 * (81.601_006 + a2 * (-76.549_87 + a2 * 39.537_426))))
+}
+
+/// `tan(pi x)` for `x` in `[0, 0.49]`: the prewarped cutoff of a
+/// bilinear-transform filter, `x = cutoff / sample_rate`. Max relative error
+/// 1.5e-6. Clamped to that domain.
+#[inline]
+pub fn tan_pi(x: f32) -> f32 {
+    let h = 0.5 * x.clamp(0.0, 0.49);
+    // Both in [0, 1/4]: no reduction needed.
+    sin_quarter(h) / sin_quarter(0.25 - h)
 }
 
 /// Decibels to linear gain. Max relative error 1e-6 on `[-120, 120]` dB.
@@ -248,6 +291,51 @@ mod tests {
         );
         assert!(e < 3e-5, "gain_to_db abs err {e}");
         assert_eq!(gain_to_db(0.0), gain_to_db(1e-6));
+    }
+
+    fn sin_turns_ref(x: f64) -> f64 {
+        (core::f64::consts::TAU * x).sin()
+    }
+
+    #[test]
+    fn sin_cos_bound() {
+        let e = max_abs_err(sin_turns, sin_turns_ref, sweep(-4.0, 4.0, 1_000_000));
+        assert!(e < 3e-7, "sin err {e}");
+        let e = max_abs_err(
+            cos_turns,
+            |x| sin_turns_ref(x + 0.25),
+            sweep(-4.0, 4.0, 1_000_000),
+        );
+        assert!(e < 3e-7, "cos err {e}");
+        // Far from zero: the reduction is still exact.
+        let far = sweep(0.0, 1.0, 10_000).map(|x| x + 3_000_000.0);
+        let e = max_abs_err(sin_turns, sin_turns_ref, far);
+        assert!(e < 3e-7, "sin far err {e}");
+    }
+
+    #[test]
+    fn sin_is_odd_bounded_and_exact_at_half_turns() {
+        for x in sweep(-3.0, 3.0, 100_000) {
+            let s = sin_turns(x);
+            assert_eq!(sin_turns(-x), -s, "{x}");
+            assert!(s.abs() <= 1.0, "{x}");
+        }
+        for k in -8..=8 {
+            assert_eq!(sin_turns(k as f32 * 0.5), 0.0);
+        }
+        assert_eq!(cos_turns(0.0), 0.999_999_94);
+    }
+
+    #[test]
+    fn tan_pi_bound() {
+        let e = max_rel_err(
+            tan_pi,
+            |x| (core::f64::consts::PI * x).tan(),
+            sweep(1e-4, 0.49, 1_000_000),
+        );
+        assert!(e < 1.5e-6, "tan rel err {e}");
+        assert_eq!(tan_pi(0.0), 0.0);
+        assert_eq!(tan_pi(0.7), tan_pi(0.49), "clamped");
     }
 }
 

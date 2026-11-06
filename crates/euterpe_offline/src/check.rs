@@ -9,7 +9,7 @@
 //! }
 //! ```
 
-use euterpe_core::{ParamDesc, ParamKind, ParamSet, ParamValue, Processor};
+use euterpe_core::{Device, ParamDesc, ParamKind, ParamSet, ParamValue, Processor};
 
 use crate::render::{RenderOptions, render, render_with};
 use crate::signal;
@@ -103,6 +103,54 @@ pub fn check_processor<P: Processor + Default>(opts: &CheckOptions) -> Result<()
     }
 }
 
+/// Check that `D`'s graph built the way the embedded platforms build it
+/// ([`Device::GRAPH_INIT`]) behaves exactly like `Default`: the same output,
+/// bit for bit, for every test signal with every parameter automated.
+/// Trivial for [`Init::DEFAULT`](euterpe_core::place::Init::DEFAULT); for a
+/// zeroed init it tests the safety claim of
+/// [`Init::zeroed`](euterpe_core::place::Init::zeroed).
+///
+/// # Errors
+///
+/// One message per signal whose outputs differ.
+pub fn check_init<D: Device>(opts: &CheckOptions) -> Result<(), Vec<String>> {
+    let mut failures = Vec::new();
+    for (name, input) in test_signals(opts) {
+        let mut placed = Box::<D::Graph>::new_uninit();
+        // SAFETY: a fresh, aligned allocation; `GRAPH_INIT`'s contract is
+        // what's being tested, and a valid `Init::DEFAULT` always holds.
+        let mut placed = unsafe {
+            D::GRAPH_INIT.build(placed.as_mut_ptr());
+            placed.assume_init()
+        };
+        let mut built = Box::<D::Graph>::default();
+        let automate = |i: usize, p: &mut <D::Graph as Processor>::Params| {
+            let n = if (i / 32).is_multiple_of(2) { 0.2 } else { 0.9 };
+            for d in <D::Graph as Processor>::Params::SCHEMA {
+                let _ = p.set_normalized(d.id, n);
+            }
+        };
+        let ro = RenderOptions::new(opts.sample_rate);
+        let a = render_with(&mut *placed, &mut Default::default(), &input, &ro, automate);
+        let b = render_with(&mut *built, &mut Default::default(), &input, &ro, automate);
+        if a.iter()
+            .map(|s| s.to_bits())
+            .ne(b.iter().map(|s| s.to_bits()))
+        {
+            failures.push(format!(
+                "{}: built with {:?}, `{name}` renders differently than with Default",
+                D::NAME,
+                D::GRAPH_INIT
+            ));
+        }
+    }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(failures)
+    }
+}
+
 fn test_signals(opts: &CheckOptions) -> Vec<(&'static str, Vec<f32>)> {
     let n = opts.len;
     vec![
@@ -153,7 +201,40 @@ fn check_output(failures: &mut Vec<String>, case: &str, out: &[f32], opts: &Chec
 #[cfg(test)]
 mod tests {
     use super::*;
+    use euterpe_core::place::Init;
     use euterpe_core::{Block, Ctx, params};
+
+    /// Adds an offset whose default is not zero, and wrongly claims a
+    /// zeroed init.
+    struct Offset(f32);
+    impl Default for Offset {
+        fn default() -> Self {
+            Self(0.5)
+        }
+    }
+    impl Processor for Offset {
+        type Params = ();
+        fn prepare(&mut self, _: &Ctx) {}
+        fn reset(&mut self) {}
+        fn process(&mut self, buf: &mut Block, (): &()) {
+            buf.iter_mut().for_each(|s| *s += self.0);
+        }
+    }
+    struct Lying;
+    impl Device for Lying {
+        const NAME: &'static str = "test.lying";
+        const DESCRIPTION: &'static str = "";
+        type Graph = Offset;
+        // SAFETY: zeroes are a valid `Offset` (an f32); the claim that they
+        // behave like the default is the lie under test.
+        const GRAPH_INIT: Init = unsafe { Init::zeroed() };
+    }
+
+    #[test]
+    fn check_init_catches_a_wrong_zeroed_claim() {
+        let err = check_init::<Lying>(&CheckOptions::default()).unwrap_err();
+        assert!(err[0].contains("renders differently"), "{err:?}");
+    }
 
     params! {
         struct GainParams {

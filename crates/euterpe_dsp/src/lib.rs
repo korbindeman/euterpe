@@ -9,6 +9,10 @@
 //! - [`convolve`]: [`Convolver`], zero-latency partitioned convolution with
 //!   an impulse response (cabinets).
 //! - [`fft`]: the 64-point real FFT the convolver runs on.
+//! - [`filter`]: [`Svf`] (every second-order shape, stable under
+//!   modulation), [`OnePole`] and [`DcBlocker`].
+//! - [`delay`]: [`DelayLine`], with integer, linear and cubic taps.
+//! - [`lfo`]: [`Phasor`] and the LFO [`Shape`]s.
 
 #![no_std]
 // An unsuffixed float literal falls back to f64, which is soft-float on the
@@ -16,8 +20,14 @@
 #![cfg_attr(not(test), warn(clippy::default_numeric_fallback))]
 
 pub mod convolve;
+pub mod delay;
 pub mod fft;
+pub mod filter;
+pub mod lfo;
 pub mod oversample;
 
 pub use convolve::Convolver;
+pub use delay::DelayLine;
+pub use filter::{DcBlocker, OnePole, Svf, SvfCoeffs, dc_blocker_coeff, one_pole_coeff};
+pub use lfo::{Phasor, Shape};
 pub use oversample::{Oversample2x, Oversampled2, Oversampled4, Oversampled8};

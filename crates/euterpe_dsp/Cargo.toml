@@ -1,6 +1,6 @@
 [package]
 name = "euterpe_dsp"
-description = "Euterpe DSP building blocks: oversampling, and more to come. no_std, allocation-free."
+description = "Euterpe DSP building blocks: oversampling, convolution, filters, delay lines, LFOs. no_std, allocation-free."
 version.workspace = true
 edition.workspace = true
 

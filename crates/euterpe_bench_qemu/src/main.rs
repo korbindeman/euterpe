@@ -21,17 +21,17 @@ use cortex_m_rt::entry;
 use cortex_m_semihosting::{debug, hprintln};
 use euterpe_bench::{Probe, Sink, bench_device, bench_overhead};
 use euterpe_core::Device;
-use euterpe_core::device::GRAPH_ARENA_BYTES;
+use euterpe_core::device::LARGE_GRAPH_ARENA_BYTES;
 use euterpe_core::place::{Arena, ArenaRef};
 
 struct BenchAll<'a> {
-    arena: &'a mut ArenaRef<GRAPH_ARENA_BYTES>,
+    arena: &'a mut ArenaRef<LARGE_GRAPH_ARENA_BYTES>,
     probe: &'a mut Markers,
     sink: &'a mut Semihosting,
 }
 
-/// The graph's home, as on the Daisy.
-static GRAPH: Arena<GRAPH_ARENA_BYTES> = Arena::new();
+/// The graph's home: big enough for any graph the Daisy can hold.
+static GRAPH: Arena<LARGE_GRAPH_ARENA_BYTES> = Arena::new();
 
 impl euterpe_registry::Each for BenchAll<'_> {
     fn device<D: Device>(&mut self) {
@@ -46,11 +46,11 @@ impl euterpe_registry::Each for BenchAll<'_> {
 /// frames below the measured stack pointer.
 #[inline(never)]
 fn bench_out_of_line<D: Device>(
-    arena: &mut ArenaRef<GRAPH_ARENA_BYTES>,
+    arena: &mut ArenaRef<LARGE_GRAPH_ARENA_BYTES>,
     probe: &mut Markers,
     sink: &mut Semihosting,
 ) {
-    bench_device::<D, GRAPH_ARENA_BYTES>(arena, probe, sink);
+    bench_device::<D, LARGE_GRAPH_ARENA_BYTES>(arena, probe, sink);
 }
 
 /// Stack high-water measurement by painting.

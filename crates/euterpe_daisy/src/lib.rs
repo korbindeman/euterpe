@@ -17,11 +17,12 @@
 //! Parameters stay at their defaults for now; panel bindings come with the
 //! `Controls` part of the platform.
 //!
-//! Memory: the graph is built in place in an 80 KB arena in DTCM
-//! ([`GRAPH_ARENA_BYTES`]), never on the stack, so the stack (the rest of
-//! DTCM) only holds call frames. A graph that doesn't fit is a compile error.
-//! Delay lines and sample memory beyond that will go to SDRAM, per the
-//! spec's performance rules.
+//! Memory: the graph is built in place, never on the stack, so the stack
+//! (the rest of DTCM) only holds call frames. It goes in an 80 KB arena in
+//! DTCM ([`GRAPH_ARENA_BYTES`]) if it fits, and otherwise in a 480 KB arena
+//! in AXI SRAM ([`LARGE_GRAPH_ARENA_BYTES`]), behind the data cache: that is
+//! where delay lines put a graph. A graph too big for both is a compile
+//! error. Sample memory beyond that will go to SDRAM.
 
 #![no_std]
 #![cfg_attr(not(test), warn(clippy::default_numeric_fallback))]
@@ -32,8 +33,8 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use cortex_m::interrupt::Mutex;
 use cortex_m::peripheral::DWT;
 use daisy::audio;
-use euterpe_core::device::GRAPH_ARENA_BYTES;
-use euterpe_core::place::Arena;
+use euterpe_core::device::{GRAPH_ARENA_BYTES, LARGE_GRAPH_ARENA_BYTES};
+use euterpe_core::place::{Arena, ArenaRef, Init, LinkedArena, Region};
 use euterpe_core::{BLOCK, Block, Ctx, Device, Platform, Processor};
 use stm32h7xx_hal::pac::{self, interrupt};
 
@@ -94,19 +95,44 @@ struct Running<P: Processor> {
     buf: Block,
 }
 
-impl<P: Processor + Default> Default for Running<P> {
-    fn default() -> Self {
-        Self {
-            graph: P::default(),
-            params: P::Params::default(),
-            buf: [0.0; BLOCK],
-        }
-    }
-}
-
-/// The graph's home: DTCM (`.bss` is DTCM on the Daisy), zero-wait-state
-/// and outside the caches.
+/// The graph's home if it fits: DTCM (`.bss` is DTCM on the Daisy),
+/// zero-wait-state and outside the caches.
 static GRAPH: Arena<GRAPH_ARENA_BYTES> = Arena::new();
+
+/// The home of a graph too big for DTCM: AXI SRAM, behind the data cache.
+/// `.sram` is `NOLOAD`, so the arena's flag lives in `.bss`.
+#[unsafe(link_section = ".sram")]
+static LARGE_MEM: Region<LARGE_GRAPH_ARENA_BYTES> = Region::new();
+static LARGE_GRAPH: LinkedArena<LARGE_GRAPH_ARENA_BYTES> = LinkedArena::new(&LARGE_MEM);
+
+/// Build the graph in DTCM if it fits, else in AXI SRAM, field by field so
+/// that no part of it passes through the stack.
+fn place_graph<P: Processor + Default>(init: Init) -> &'static mut Running<P> {
+    const {
+        assert!(
+            ArenaRef::<LARGE_GRAPH_ARENA_BYTES>::fits::<Running<P>>(),
+            "the graph is bigger than the Daisy's AXI SRAM arena"
+        );
+    };
+    let build = |r: *mut Running<P>| {
+        // SAFETY: `r` is aligned and valid for writes (the arena), and
+        // every field is written.
+        unsafe {
+            init.build(&raw mut (*r).graph);
+            (&raw mut (*r).params).write(P::Params::default());
+            (&raw mut (*r).buf).write([0.0; BLOCK]);
+        }
+    };
+    let fast = GRAPH.take().expect("run is called once");
+    // SAFETY: `build` initializes the whole `Running`.
+    unsafe { fast.try_place_forever_by(build) }.unwrap_or_else(|_| {
+        let large = LARGE_GRAPH.take().expect("run is called once");
+        // SAFETY: as above.
+        unsafe { large.try_place_forever_by(build) }
+            .ok()
+            .expect("checked at compile time")
+    })
+}
 
 fn process_block<P: Processor>(state: *mut (), frames: &mut audio::Block) {
     // SAFETY: `state` is the `Running<P>` that `Daisy::run::<D>` created for
@@ -144,8 +170,7 @@ impl Platform for Daisy {
 
         #[expect(clippy::cast_precision_loss, reason = "48 kHz is exact in f32")]
         let ctx = Ctx::new(audio::FS.to_Hz() as f32);
-        let running: &'static mut Running<D::Graph> =
-            GRAPH.take().expect("run is called once").place_forever();
+        let running = place_graph::<D::Graph>(D::GRAPH_INIT);
         running.graph.prepare(&ctx);
         running.graph.reset();
         BUDGET.store(D::BUDGET_CYCLES_PER_BLOCK, Ordering::Relaxed);

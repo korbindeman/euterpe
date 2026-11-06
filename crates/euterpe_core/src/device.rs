@@ -1,13 +1,19 @@
 //! Devices: complete, named signal graphs that a platform can run.
 
+use crate::place::Init;
 use crate::processor::Processor;
 
-/// Bytes the embedded platforms reserve for a device's graph: an
-/// [`Arena`](crate::place::Arena) in the Daisy's DTCM, next to the stack.
-/// A graph larger than this fails to build for the Daisy, and `euterpe
-/// bench` reports it. 80 KB leaves about 48 KB of DTCM for the stack and
-/// the other statics.
+/// Bytes of fast memory the embedded platforms reserve for a device's
+/// graph: an [`Arena`](crate::place::Arena) in the Daisy's DTCM, next to the
+/// stack, zero-wait-state and outside the caches. 80 KB leaves about 48 KB
+/// of DTCM for the stack and the other statics.
 pub const GRAPH_ARENA_BYTES: usize = 80 * 1024;
+
+/// Bytes for a graph too big for [`GRAPH_ARENA_BYTES`] (delay lines): the
+/// Daisy's 512 KB AXI SRAM, behind the data cache. A graph larger than this
+/// fails to build for the Daisy; `euterpe bench` reports which one a device
+/// gets.
+pub const LARGE_GRAPH_ARENA_BYTES: usize = 480 * 1024;
 
 /// A product definition: a named, complete signal graph.
 ///
@@ -34,4 +40,11 @@ pub trait Device {
     /// graphs are plain data, so this holds unless a processor keeps a raw
     /// pointer.
     type Graph: Processor<Params: Send + 'static> + Default + Send + 'static;
+
+    /// How the embedded platforms build [`Self::Graph`] in place. A graph
+    /// with big buffers (delay lines) whose default is all zeros should set
+    /// `unsafe { Init::zeroed() }`: built with `Default`, it may pass
+    /// through the stack. `euterpe bench` reports the stack it takes, and
+    /// `euterpe_offline::check::check_init` tests the claim.
+    const GRAPH_INIT: Init = Init::DEFAULT;
 }

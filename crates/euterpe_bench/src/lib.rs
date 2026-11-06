@@ -16,7 +16,7 @@
 
 use core::hint::black_box;
 
-use euterpe_core::place::ArenaRef;
+use euterpe_core::place::{ArenaRef, Init};
 use euterpe_core::{BLOCK, Block, Ctx, Device, ParamSet, Processor};
 
 /// Measured blocks per scenario.
@@ -96,7 +96,7 @@ pub fn bench_device<D: Device, const N: usize>(
     sink: &mut impl Sink,
 ) {
     for scenario in Scenario::ALL {
-        let total = run::<D::Graph, N>(arena, scenario, probe);
+        let total = run::<D::Graph, N>(arena, D::GRAPH_INIT, scenario, probe);
         sink.scenario(D::NAME, scenario.name(), BLOCKS, total);
     }
 }
@@ -107,7 +107,10 @@ pub fn bench_device<D: Device, const N: usize>(
 /// (`<euterpe_bench::Hot<Graph>>::process`). Without it the optimizer may
 /// inline the graph's `process` into the bench loop, and there would be no
 /// function left to check.
+///
+/// `repr(transparent)`, so a `Hot<P>` built by zeroing is a zeroed `P`.
 #[derive(Default)]
+#[repr(transparent)]
 pub struct Hot<P>(pub P);
 
 impl<P: Processor> Hot<P> {
@@ -119,10 +122,11 @@ impl<P: Processor> Hot<P> {
 
 fn run<P: Processor + Default, const N: usize>(
     arena: &mut ArenaRef<N>,
+    init: Init,
     scenario: Scenario,
     probe: &mut impl Probe,
 ) -> Option<u64> {
-    let mut processor = arena.place::<Hot<P>>();
+    let mut processor = arena.place_with::<Hot<P>>(init);
     processor.0.prepare(&Ctx::new(SAMPLE_RATE));
     processor.0.reset();
     let mut params = P::Params::default();

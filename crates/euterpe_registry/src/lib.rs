@@ -71,6 +71,10 @@ devices! {
     euterpe_demo::Drive4xDevice,
     euterpe_demo::CabDevice,
     euterpe_demo::RigDevice,
+    euterpe_pedals::FuzzDevice,
+    euterpe_pedals::TremoloDevice,
+    euterpe_pedals::DelayDevice,
+    euterpe_pedals::EqDevice,
 }
 
 #[cfg(test)]
@@ -86,6 +90,20 @@ mod tests {
         assert!(!contains(""));
     }
 
+    /// Every device's graph, built the way the embedded platforms build it,
+    /// behaves like its `Default`.
+    #[test]
+    fn every_graph_init_is_sound() {
+        struct Check;
+        impl Each for Check {
+            fn device<D: Device>(&mut self) {
+                let opts = euterpe_offline::check::CheckOptions::default();
+                euterpe_offline::check::check_init::<D>(&opts).unwrap();
+            }
+        }
+        each(&mut Check);
+    }
+
     #[test]
     fn names_are_unique() {
         for (i, (a, _)) in DEVICES.iter().enumerate() {
@@ -98,14 +116,14 @@ mod tests {
 
     #[test]
     fn each_visits_every_device_in_order() {
-        struct Names([&'static str; 8], usize);
+        struct Names([&'static str; 16], usize);
         impl Each for Names {
             fn device<D: Device>(&mut self) {
                 self.0[self.1] = D::NAME;
                 self.1 += 1;
             }
         }
-        let mut names = Names([""; 8], 0);
+        let mut names = Names([""; 16], 0);
         each(&mut names);
         assert_eq!(names.1, DEVICES.len());
         for (i, (name, _)) in DEVICES.iter().enumerate() {

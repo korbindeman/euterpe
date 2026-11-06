@@ -34,13 +34,14 @@ just test
 
 This repo is becoming **Euterpe**, a toolkit for building audio hardware. The design is in `specs/ARCHITECTURE.md`; read it before adding processors or devices. New work goes into the `euterpe_*` crates. The older crates below are migrated step by step.
 
-- **`crates/euterpe_core`** (`no_std`): `place::Arena` (platforms build the graph in a static arena, never on the stack), `Processor` (block-based, `BLOCK = 32`), `SampleProcessor` + `PerSample`, `Ctx`, `#[derive(Params)]` / `ParamSet` schemas (and the older `params!`), `#[derive(Chain)]`, `Smoother` / `Ramp`, `fastmath` (tested error bounds), `Device`.
+- **`crates/euterpe_core`** (`no_std`): `place::Arena` (platforms build the graph in a static arena, never on the stack; `Device::GRAPH_INIT` lets a graph with big all-zero buffers be built by zeroing), `Processor` (block-based, `BLOCK = 32`), `SampleProcessor` + `PerSample`, `Ctx`, `#[derive(Params)]` / `ParamSet` schemas (and the older `params!`), `#[derive(Chain)]`, `Smoother` / `Ramp`, `fastmath` (exp2, tanh, sin/cos in turns, tan_pi for filter cutoffs; tested error bounds), `Device`.
 - **`crates/euterpe_offline`**: WAV I/O, `render` / `render_with` (latency-compensated, deterministic), test signals, `check::check_processor`, and `analyze` (response, THD, aliasing, null).
 - **`crates/euterpe_macros`**: the proc macros behind `#[derive(Params)]` and `#[derive(Chain)]`, re-exported by `euterpe_core`. Nested schemas are composed at compile time (`euterpe_core::params::compose`): ids get the field name as a prefix (`drive.level`), and duplicate ids are a compile error.
-- **`crates/euterpe_dsp`** (`no_std`): DSP blocks. `Oversampled2/4/8<P>`: polyphase half-band stages (taps from `tools/design/halfband.py`, ≥100 dB, flat to 20 kHz), exact integer latency. `Convolver<P>`: zero-latency uniformly partitioned convolution (`P` × 32 taps) on its own 64-point real FFT (`fft`, compile-time twiddles).
+- **`crates/euterpe_dsp`** (`no_std`): DSP blocks. `Oversampled2/4/8<P>`: polyphase half-band stages (taps from `tools/design/halfband.py`, ≥100 dB, flat to 20 kHz), exact integer latency. `Convolver<P>`: zero-latency uniformly partitioned convolution (`P` × 32 taps) on its own 64-point real FFT (`fft`, compile-time twiddles). `Svf` (TPT state-variable filter: low/high/band pass, notch, allpass, bell, shelves; coefficients per block via `SvfCoeffs`), `OnePole`, `DcBlocker`, `DelayLine<N>` (integer, linear and cubic taps), `Phasor` (u32, drift-free) and LFO `Shape`s.
 - **`crates/euterpe_registry`** (`no_std`): the one list of devices, read by every tool.
 - **`crates/euterpe_cli`**: the `euterpe` binary.
 - **`devices/demo`**: `demo.gain`, `demo.drive`, `demo.drive4x` (the drive wrapped in `Oversampled4`) and `demo.cab` (2048-tap Deluxe Reverb IR through `Convolver<64>`) and `demo.rig` (drive4x into cab, a `#[derive(Chain)]`), the reference examples for writing a processor and a device.
+- **`devices/pedals`**: `pedal.fuzz` (biased tanh at 4x, DC blocker, tone), `pedal.tremolo`, `pedal.delay` (1 s feedback delay; its graph lives in AXI SRAM and uses a zeroed `GRAPH_INIT`), `pedal.eq` (shelves and a mid bell, tested against the RBJ prototypes).
 - **`crates/euterpe_bench`** (`no_std`): the bench harness (`static` and `automated` scenarios), shared by every bench target.
 - **`crates/euterpe_bench_qemu`**: bench firmware for QEMU's `mps2-an500` (a Cortex-M7). Run through `euterpe bench`, never directly.
 - **`crates/euterpe_daisy`**: the Daisy Seed `Platform`. Runs a device on the codec, measures every block with the DWT cycle counter, blinks the LED fast if a block goes over budget.
@@ -67,13 +68,13 @@ Builds `euterpe_bench_qemu`, runs it on QEMU with the `tools/qemu/euterpe_insn.c
 
 - Instruction counts are deterministic, so the baseline has zero tolerance by default. They are not cycles: until DWT calibration from a board exists, cycles are estimated as one per instruction.
 - Needs `qemu-system-arm` (with plugin support), a C compiler with glib headers, and `llvm-objdump` (`rustup component add llvm-tools`).
-- It also reports each device's stack high-water mark (painted and scanned in the firmware) and `size_of` its graph. Over 32 KB of stack fails the bench: the Daisy's stack shares 128 KB of DTCM with `.bss`, which holds the 80 KB graph arena (`GRAPH_ARENA_BYTES`).
+- It also reports each device's stack high-water mark (painted and scanned in the firmware) and `size_of` its graph. Over 32 KB of stack fails the bench: the Daisy's stack shares 128 KB of DTCM with `.bss`, which holds the 80 KB graph arena (`GRAPH_ARENA_BYTES`). A graph too big for it goes to a 480 KB arena in AXI SRAM (`LARGE_GRAPH_ARENA_BYTES`, behind the D-cache); `graph_memory` says which.
 - When a change moves the numbers on purpose, run `just bench-baseline` and commit the new baseline with the change.
 
 ### Rules for new processors
 
 1. Implement `Processor` (or `SampleProcessor` wrapped in `PerSample`) with params declared via `#[derive(Params)]`. Compose processors with `#[derive(Chain)]` rather than by hand. No allocation, panics or dynamic dispatch in `process`.
-2. Keep `Default` cheap (zeroed buffers): it runs in place in the arena. Load IRs and tables in `prepare`. A graph bigger than `GRAPH_ARENA_BYTES` is a compile error on the platforms.
+2. Keep `Default` cheap (zeroed buffers): it runs in place in the arena. Load IRs and tables in `prepare`. A graph with big buffers (delay lines) can still pass through the stack when built with `Default`; if every field defaults to zero, set `const GRAPH_INIT: Init = unsafe { Init::zeroed() }` on the device (the registry tests check every device's init with `check::check_init`).
 3. Smooth audible params with `Smoother`: `prepare` it with `Params::smooth_ms(id)`, call `reset()` from the processor's `reset`, and call `block(target)` once per block.
 4. Use `euterpe_core::fastmath` in the hot path, not `micromath` or `std` math.
 5. Add a test that calls `euterpe_offline::check::check_processor::<YourProcessor>`, plus tests for the processor's actual behavior. Filters and nonlinear processors also get `analyze` tests (`response`, `thd`, `aliasing`) with numbers from a closed form or an independent reference.
@@ -87,6 +88,7 @@ Builds `euterpe_bench_qemu`, runs it on QEMU with the `tools/qemu/euterpe_insn.c
 - the oversampler's mirrored rings: every window and lag is in bounds from any position, and pushes read back in order
 - the convolver's ring: the position stays in range, both splits exist, and each partition is paired with the input from exactly its delay
 - the FFT's bit-reversal table is a permutation
+- the delay line: every tap of every ring size is in bounds, and pushes read back in order
 - `fastmath`: `exp2` is finite and positive, and `tanh` is bounded to `[-1, 1]` and exactly odd (in three steps: one proof over the polynomial and the division is too big for the solver)
 - params: any pot reading gives a valid choice, and a float field is never left out of range or NaN
 
