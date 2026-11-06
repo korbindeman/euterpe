@@ -17,6 +17,8 @@
 //! - [`delay`]: [`DelayLine`], with integer, linear and cubic taps.
 //! - [`dynamics`]: [`Follower`] envelopes and gain smoothers, and the
 //!   [`SoftKnee`] compressor curve.
+//! - [`nn`]: [`Gru`], a small recurrent network for black-box amp and
+//!   pedal models.
 //! - [`lfo`]: [`Phasor`] and the LFO [`Shape`]s.
 
 #![no_std]
@@ -30,6 +32,7 @@ pub mod dynamics;
 pub mod fft;
 pub mod filter;
 pub mod lfo;
+pub mod nn;
 pub mod oversample;
 pub mod split_convolve;
 
@@ -38,5 +41,6 @@ pub use delay::DelayLine;
 pub use dynamics::{Ballistics, Follower, SoftKnee, time_constant};
 pub use filter::{DcBlocker, OnePole, Svf, SvfCoeffs, dc_blocker_coeff, one_pole_coeff};
 pub use lfo::{Phasor, Shape};
+pub use nn::{Gru, GruModel, GruUnit, GruWeights};
 pub use oversample::{Oversample2x, Oversampled2, Oversampled4, Oversampled8};
 pub use split_convolve::SplitConvolver;
