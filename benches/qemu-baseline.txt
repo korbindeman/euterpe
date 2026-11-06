@@ -1,7 +1,7 @@
 # euterpe bench baseline: guest instructions per block on qemu mps2-an500.
 # Regenerate with `just bench-baseline` after an intended change.
 demo.gain static 151
-demo.gain automated 207
+demo.gain automated 208
 demo.drive static 1701
 demo.drive automated 1545.484375
 demo.drive4x static 19829

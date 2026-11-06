@@ -64,6 +64,11 @@ impl Device for TremoloDevice {
     const DESCRIPTION: &'static str =
         "Tremolo: an LFO (sine, triangle, square, saw) on the gain, with rate and depth.";
     type Graph = Tremolo;
+    const PANEL: &'static [euterpe_core::panel::Binding] = &[
+        euterpe_core::panel::pot(0, "rate"),
+        euterpe_core::panel::pot(1, "depth"),
+        euterpe_core::panel::button(0, "shape"),
+    ];
 }
 
 #[cfg(test)]

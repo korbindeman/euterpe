@@ -17,8 +17,12 @@
 //! With the `rtt` feature, the same numbers stream over RTT about once a
 //! second (`probe-rs run` prints them): `just probe-run <device>`.
 //!
-//! Parameters stay at their defaults for now; panel bindings come with the
-//! `Controls` part of the platform.
+//! Controls: the device's [`Device::PANEL`] is read about once a
+//! millisecond from the Seed's pins (see [`controls`] for the wiring),
+//! smoothed and debounced by [`euterpe_core::panel::Panel`], and the
+//! parameters go to the audio interrupt in a short critical section (a copy
+//! of the parameter struct) only when one changed. A panel that names a
+//! missing parameter is a compile error.
 //!
 //! Memory: the graph is built in place, never on the stack, so the stack
 //! (the rest of DTCM) only holds call frames. It goes in an 80 KB arena in
@@ -30,6 +34,8 @@
 #![no_std]
 #![cfg_attr(not(test), warn(clippy::default_numeric_fallback))]
 
+pub mod controls;
+
 use core::cell::RefCell;
 use core::sync::atomic::{AtomicU32, Ordering};
 
@@ -37,8 +43,9 @@ use cortex_m::interrupt::Mutex;
 use cortex_m::peripheral::DWT;
 use daisy::audio;
 use euterpe_core::device::{GRAPH_ARENA_BYTES, LARGE_GRAPH_ARENA_BYTES};
+use euterpe_core::panel::{self, Panel, Readings};
 use euterpe_core::place::{Arena, ArenaRef, Init, LinkedArena, Region};
-use euterpe_core::{BLOCK, Block, Ctx, Device, Platform, Processor};
+use euterpe_core::{BLOCK, Block, Ctx, Device, ParamSet, Platform, Processor};
 use stm32h7xx_hal::pac::{self, interrupt};
 
 const _: () = assert!(
@@ -154,6 +161,16 @@ pub struct Daisy;
 
 impl Platform for Daisy {
     fn run<D: Device>(self) -> ! {
+        const {
+            assert!(
+                panel::check(
+                    D::PANEL,
+                    <<D::Graph as Processor>::Params as ParamSet>::SCHEMA
+                )
+                .is_ok(),
+                "the device's PANEL binds a parameter its schema doesn't have, or the wrong kind"
+            );
+        };
         let mut cp = cortex_m::Peripherals::take().expect("run is called once");
         let dp = pac::Peripherals::take().expect("run is called once");
 
@@ -167,13 +184,36 @@ impl Platform for Daisy {
         let mut led = daisy::board_split_leds!(pins).USER;
         let audio_interface = daisy::board_split_audio!(ccdr, pins);
 
+        let mut delay = stm32h7xx_hal::delay::Delay::new(cp.SYST, ccdr.clocks);
+        let adc = stm32h7xx_hal::adc::Adc::adc1(
+            dp.ADC1,
+            stm32h7xx_hal::time::Hertz::MHz(4),
+            &mut delay,
+            ccdr.peripheral.ADC12,
+            &ccdr.clocks,
+        )
+        .enable();
+        let mut controls = controls::Controls::new(adc, pins.GPIO, controls::bound_pots(D::PANEL));
+
         #[expect(clippy::cast_precision_loss, reason = "48 kHz is exact in f32")]
         let ctx = Ctx::new(audio::FS.to_Hz() as f32);
         let running = place_graph::<D::Graph>(D::GRAPH_INIT);
+
+        // The panel as it is set at power-up, before the first block.
+        let mut panel = Panel::default();
+        let mut readings = Readings::default();
+        let mut params = <D::Graph as Processor>::Params::default();
+        controls.read(&mut readings);
+        panel.update(D::PANEL, &readings, &mut params);
+        running.params = params.clone();
+
         running.graph.prepare(&ctx);
         running.graph.reset();
         BUDGET.store(D::BUDGET_CYCLES_PER_BLOCK, Ordering::Relaxed);
 
+        // From here the interrupt owns `running`; this loop only writes
+        // the parameters, through this pointer, with interrupts off.
+        let shared_params: *mut <D::Graph as Processor>::Params = &raw mut running.params;
         cortex_m::interrupt::free(|cs| {
             RUNNER.borrow(cs).replace(Some(Runner {
                 state: (&raw mut *running).cast(),
@@ -183,7 +223,6 @@ impl Platform for Daisy {
             AUDIO.borrow(cs).replace(Some(ai));
         });
 
-        // Blink: 1 Hz while within budget, 5 Hz once over it.
         let sys_hz = ccdr.clocks.sys_ck().to_Hz();
         #[cfg(feature = "rtt")]
         rtt_target::rprintln!(
@@ -192,27 +231,37 @@ impl Platform for Daisy {
             sys_hz,
             D::BUDGET_CYCLES_PER_BLOCK
         );
-        #[cfg(feature = "rtt")]
-        let mut toggles = 0_u32;
+
+        // The control loop: one scan per millisecond, timed by DWT.
+        let tick = sys_hz / 1000;
+        let mut next = DWT::cycle_count();
+        let mut ticks = 0_u32;
         loop {
+            next = next.wrapping_add(tick);
+            while next.wrapping_sub(DWT::cycle_count()) <= tick {}
+            ticks = ticks.wrapping_add(1);
+
+            controls.read(&mut readings);
+            if panel.update(D::PANEL, &readings, &mut params) {
+                cortex_m::interrupt::free(|_| {
+                    // SAFETY: `shared_params` points into the graph's arena,
+                    // which lives forever; the only other user is the audio
+                    // interrupt, which can't run inside this critical section.
+                    unsafe { *shared_params = params.clone() };
+                });
+            }
+
+            // Blink: 1 Hz while within budget, 5 Hz once over it.
             let s = stats();
+            let half_period_ms = if s.max > s.budget { 100 } else { 500 };
+            if ticks.is_multiple_of(half_period_ms) {
+                led.toggle();
+            }
             // About once a second: the cycle accounting, over RTT.
             #[cfg(feature = "rtt")]
-            {
-                toggles = toggles.wrapping_add(1);
-                if s.max > s.budget || toggles.is_multiple_of(2) {
-                    report(&s);
-                }
+            if ticks.is_multiple_of(1000) {
+                report(&s);
             }
-            let half_period = if s.max > s.budget {
-                sys_hz / 10
-            } else {
-                sys_hz / 2
-            };
-            led.toggle();
-            // `running` is in the arena for good, and only the interrupt
-            // touches it from here on.
-            cortex_m::asm::delay(half_period);
         }
     }
 }

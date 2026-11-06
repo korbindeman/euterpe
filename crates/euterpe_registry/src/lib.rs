@@ -30,6 +30,11 @@ macro_rules! devices {
         /// firmware that picks its device at build time can fail the build
         /// on a typo.
         pub const fn contains(name: &str) -> bool {
+            index_of(name).is_some()
+        }
+
+        /// The position of the device called `name` in [`DEVICES`].
+        pub const fn index_of(name: &str) -> Option<usize> {
             let mut i = 0;
             while i < DEVICES.len() {
                 let d = DEVICES[i].0.as_bytes();
@@ -40,12 +45,30 @@ macro_rules! devices {
                         k += 1;
                     }
                     if k == d.len() {
-                        return true;
+                        return Some(i);
                     }
                 }
                 i += 1;
             }
-            false
+            None
+        }
+
+        /// Run `visitor` with device number `I` (see [`index_of`]). Which
+        /// device is settled at compile time, so firmware that picks one
+        /// links only that one; [`visit`] compares names at run time and
+        /// may link them all.
+        pub fn visit_at<const I: usize, V: Visitor>(visitor: V) -> Option<V::Out> {
+            $(
+                if I == const {
+                    match index_of(<$device as Device>::NAME) {
+                        Some(k) => k,
+                        None => usize::MAX,
+                    }
+                } {
+                    return Some(visitor.visit::<$device>());
+                }
+            )*
+            None
         }
 
         /// Run `visitor` with the device called `name`.
@@ -89,6 +112,8 @@ mod tests {
         assert!(!contains("demo.driv"));
         assert!(!contains("demo.drive4"));
         assert!(!contains(""));
+        assert_eq!(index_of("demo.gain"), Some(0));
+        assert_eq!(index_of(DEVICES[3].0), Some(3));
     }
 
     /// Every device's graph, built the way the embedded platforms build it,
@@ -100,6 +125,23 @@ mod tests {
             fn device<D: Device>(&mut self) {
                 let opts = euterpe_offline::check::CheckOptions::default();
                 euterpe_offline::check::check_init::<D>(&opts).unwrap();
+            }
+        }
+        each(&mut Check);
+    }
+
+    /// Every device's panel binds parameters its schema has, with controls
+    /// of the right kind.
+    #[test]
+    fn every_panel_matches_its_schema() {
+        struct Check;
+        impl Each for Check {
+            fn device<D: Device>(&mut self) {
+                use euterpe_core::{ParamSet, Processor};
+                let schema = <<D::Graph as Processor>::Params as ParamSet>::SCHEMA;
+                if let Err(e) = euterpe_core::panel::check(D::PANEL, schema) {
+                    panic!("{}: {e:?}", D::NAME);
+                }
             }
         }
         each(&mut Check);

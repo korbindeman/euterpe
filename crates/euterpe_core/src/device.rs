@@ -1,5 +1,6 @@
 //! Devices: complete, named signal graphs that a platform can run.
 
+use crate::panel::Binding;
 use crate::place::Init;
 use crate::processor::Processor;
 
@@ -17,8 +18,7 @@ pub const LARGE_GRAPH_ARENA_BYTES: usize = 480 * 1024;
 
 /// A product definition: a named, complete signal graph.
 ///
-/// The same device runs on every platform (Daisy, desktop, offline). Panel
-/// bindings will be added here as those platforms land.
+/// The same device runs on every platform (Daisy, desktop, offline).
 pub trait Device {
     /// Stable machine name, e.g. `"demo.drive"`. Used by the CLI.
     const NAME: &'static str;
@@ -47,4 +47,9 @@ pub trait Device {
     /// through the stack. `euterpe bench` reports the stack it takes, and
     /// `euterpe_offline::check::check_init` tests the claim.
     const GRAPH_INIT: Init = Init::DEFAULT;
+
+    /// The hardware controls and the parameters they set (see
+    /// [`panel`](crate::panel)). Checked against the schema when a platform
+    /// builds the device, and by the registry tests.
+    const PANEL: &'static [Binding] = &[];
 }

@@ -144,8 +144,31 @@ impl Visitor for SchemaJob {
             ("device", Json::str(D::NAME)),
             ("description", Json::str(D::DESCRIPTION)),
             ("params", schema_json::<<D::Graph as Processor>::Params>()),
+            ("panel", panel_json(D::PANEL)),
         ])
     }
+}
+
+/// The hardware controls: `{"control": "pot", "index": 0, "param": "drive"}`.
+fn panel_json(panel: &[euterpe_core::panel::Binding]) -> Json {
+    use euterpe_core::panel::Control;
+    Json::Arr(
+        panel
+            .iter()
+            .map(|b| {
+                let (kind, index) = match b.control {
+                    Control::Pot(i) => ("pot", i),
+                    Control::Switch(i) => ("switch", i),
+                    Control::Button(i) => ("button", i),
+                };
+                Json::Obj(vec![
+                    ("control", Json::str(kind)),
+                    ("index", Json::num(f32::from(index))),
+                    ("param", Json::str(b.param)),
+                ])
+            })
+            .collect(),
+    )
 }
 
 fn schema_json<P: ParamSet>() -> Json {
@@ -449,6 +472,7 @@ mod tests {
         let out = run(&args("schema demo.drive")).unwrap().render();
         assert!(out.contains("\"id\": \"drive\""));
         assert!(out.contains("\"unit\": \"dB\""));
+        assert!(out.contains("\"control\": \"pot\""), "{out}");
     }
 
     #[test]

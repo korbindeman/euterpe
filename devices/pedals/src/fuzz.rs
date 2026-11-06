@@ -117,6 +117,12 @@ impl Device for FuzzDevice {
     const DESCRIPTION: &'static str =
         "Asymmetric tanh fuzz at 4x oversampling, with bias, a lowpass tone and level.";
     type Graph = Fuzz;
+    const PANEL: &'static [euterpe_core::panel::Binding] = &[
+        euterpe_core::panel::pot(0, "fuzz"),
+        euterpe_core::panel::pot(1, "bias"),
+        euterpe_core::panel::pot(2, "tone"),
+        euterpe_core::panel::pot(3, "level"),
+    ];
 }
 
 #[cfg(test)]

@@ -100,6 +100,13 @@ impl Device for EqDevice {
     const NAME: &'static str = "pedal.eq";
     const DESCRIPTION: &'static str = "3-band EQ: bass shelf (120 Hz), sweepable mid bell (250 Hz - 5 kHz), treble shelf (4 kHz).";
     type Graph = Eq;
+    const PANEL: &'static [euterpe_core::panel::Binding] = &[
+        euterpe_core::panel::pot(0, "bass"),
+        euterpe_core::panel::pot(1, "mid"),
+        euterpe_core::panel::pot(2, "mid_freq"),
+        euterpe_core::panel::pot(3, "treble"),
+        euterpe_core::panel::pot(4, "level"),
+    ];
 }
 
 #[cfg(test)]

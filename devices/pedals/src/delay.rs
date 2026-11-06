@@ -98,6 +98,12 @@ impl Device for DelayDevice {
     // and position, the filter state, the smoothers (`Smoother::new` is all
     // zeros) and the rates, which `prepare` sets. `check_init` tests it.
     const GRAPH_INIT: Init = unsafe { Init::zeroed() };
+    const PANEL: &'static [euterpe_core::panel::Binding] = &[
+        euterpe_core::panel::pot(0, "time"),
+        euterpe_core::panel::pot(1, "feedback"),
+        euterpe_core::panel::pot(2, "mix"),
+        euterpe_core::panel::pot(3, "tone"),
+    ];
 }
 
 #[cfg(test)]

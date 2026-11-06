@@ -12,7 +12,8 @@
 //!   field order, with each stage's parameters nested under its field name.
 //! - [`Smoother`]: control-rate smoothing that hands out per-block [`Ramp`]s.
 //! - [`fastmath`]: approximations with documented, tested error bounds.
-//! - [`Device`]: a named, complete signal graph that platforms can run.
+//! - [`Device`]: a named, complete signal graph that platforms can run, with
+//!   its [`panel`] of pots, switches and buttons.
 //! - [`Platform`]: something that runs a device (the Daisy, offline, ...).
 //! - [`place`]: building a graph in static memory instead of on the stack.
 
@@ -26,6 +27,7 @@ extern crate self as euterpe_core;
 
 pub mod device;
 pub mod fastmath;
+pub mod panel;
 pub mod params;
 pub mod place;
 pub mod platform;

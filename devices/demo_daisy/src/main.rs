@@ -23,10 +23,10 @@ const DEVICE: &str = match option_env!("EUTERPE_DEVICE") {
     None => "demo.drive",
 };
 
-const _: () = assert!(
-    euterpe_registry::contains(DEVICE),
-    "EUTERPE_DEVICE is not a registered device (see `just euterpe devices`)"
-);
+const INDEX: usize = match euterpe_registry::index_of(DEVICE) {
+    Some(i) => i,
+    None => panic!("EUTERPE_DEVICE is not a registered device (see `just euterpe devices`)"),
+};
 
 struct Run;
 
@@ -39,8 +39,8 @@ impl euterpe_registry::Visitor for Run {
 
 #[entry]
 fn main() -> ! {
-    // `contains` was checked at compile time, so the lookup finds it.
-    match euterpe_registry::visit(DEVICE, Run) {
+    // Picked at compile time: only this device is linked.
+    match euterpe_registry::visit_at::<INDEX, _>(Run) {
         Some(never) => match never {},
         None => unreachable!("checked at compile time"),
     }

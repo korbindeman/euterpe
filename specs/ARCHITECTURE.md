@@ -164,7 +164,7 @@ These apply to everything in the hot path. They are enforced in review and by `e
 
 ## Platforms
 
-*Implemented so far as `fn run<D: Device>(self) -> !` only; `Controls` and `Storage` come when a platform needs them.*
+*Implemented so far as `fn run<D: Device>(self) -> !`; controls are a const `Device::PANEL` (see `euterpe_core::panel`) that each platform reads its own way (the Daisy: ADC and GPIO in `euterpe_daisy::controls`). `Storage` comes when a platform needs it.*
 
 ```rust
 pub trait Platform {
@@ -192,9 +192,10 @@ pub struct ComboDevice;
 impl Device for ComboDevice {
     type Graph = Combo;
     const PANEL: &'static [Binding] = &[
-        pot("knob1", "amp.gain", Taper::Audio),
-        pot("knob2", "amp.tone"),
-        button("button1", "amp.type", Action::Cycle),
+        pot(0, "amp.gain"),      // the param's own taper maps the travel
+        pot(1, "amp.tone"),
+        button(0, "amp.type"),   // steps a choice, flips a toggle
+        switch(1, "amp.bright"), // a maintained switch holds a toggle
     ];
     const BUDGET_CYCLES_PER_BLOCK: u32 = 200_000; // ~70% of 480 MHz × 0.67 ms
 }

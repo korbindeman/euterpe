@@ -65,6 +65,7 @@ impl Device for GainDevice {
     const NAME: &'static str = "demo.gain";
     const DESCRIPTION: &'static str = "Smoothed gain stage, -60 to +12 dB.";
     type Graph = Gain;
+    const PANEL: &'static [euterpe_core::panel::Binding] = &[euterpe_core::panel::pot(0, "gain")];
 }
 
 // ---------------------------------------------------------------------------
@@ -117,6 +118,10 @@ impl Device for DriveDevice {
     const DESCRIPTION: &'static str =
         "Tanh saturation with drive and output level (not oversampled).";
     type Graph = Drive;
+    const PANEL: &'static [euterpe_core::panel::Binding] = &[
+        euterpe_core::panel::pot(0, "drive"),
+        euterpe_core::panel::pot(1, "level"),
+    ];
 }
 
 /// `demo.drive4x`
@@ -127,6 +132,10 @@ impl Device for Drive4xDevice {
     const DESCRIPTION: &'static str =
         "demo.drive at 4x oversampling: the same tanh, without the aliasing.";
     type Graph = euterpe_dsp::Oversampled4<Drive>;
+    const PANEL: &'static [euterpe_core::panel::Binding] = &[
+        euterpe_core::panel::pot(0, "drive"),
+        euterpe_core::panel::pot(1, "level"),
+    ];
 }
 
 // ---------------------------------------------------------------------------
@@ -195,6 +204,7 @@ impl Device for CabDevice {
     // `Default`, the 55 KB graph went through the stack. `check_init`
     // tests it.
     const GRAPH_INIT: euterpe_core::place::Init = unsafe { euterpe_core::place::Init::zeroed() };
+    const PANEL: &'static [euterpe_core::panel::Binding] = &[euterpe_core::panel::pot(0, "level")];
 }
 
 // ---------------------------------------------------------------------------
@@ -220,6 +230,11 @@ impl Device for RigDevice {
     // SAFETY: both stages default to zero (the cab as above; the drive's
     // oversampler rings and smoother); `check_init` tests it.
     const GRAPH_INIT: euterpe_core::place::Init = unsafe { euterpe_core::place::Init::zeroed() };
+    const PANEL: &'static [euterpe_core::panel::Binding] = &[
+        euterpe_core::panel::pot(0, "drive.drive"),
+        euterpe_core::panel::pot(1, "drive.level"),
+        euterpe_core::panel::pot(2, "cab.level"),
+    ];
 }
 
 #[cfg(test)]

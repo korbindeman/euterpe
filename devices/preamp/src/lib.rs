@@ -152,6 +152,23 @@ impl Device for PreampDevice {
     // that `prepare` loads, `false` flags); `reset` sets the non-zero
     // starting states. `check_init` tests it.
     const GRAPH_INIT: Init = unsafe { Init::zeroed() };
+    const PANEL: &'static [euterpe_core::panel::Binding] = &[
+        euterpe_core::panel::pot(0, "channel.gain"),
+        euterpe_core::panel::pot(1, "gate.threshold"),
+        euterpe_core::panel::pot(2, "compressor.163.compression"),
+        euterpe_core::panel::pot(3, "eq.low.gain"),
+        euterpe_core::panel::pot(4, "eq.mid.gain"),
+        euterpe_core::panel::pot(5, "eq.high.gain"),
+        euterpe_core::panel::pot(6, "saturator.drive"),
+        euterpe_core::panel::pot(7, "limiter.threshold"),
+        euterpe_core::panel::switch(0, "mode"),
+        euterpe_core::panel::button(1, "compressor.type"),
+        euterpe_core::panel::button(2, "compressor.enabled"),
+        euterpe_core::panel::button(3, "saturator.enabled"),
+        euterpe_core::panel::button(4, "chorus.enabled"),
+        euterpe_core::panel::button(5, "cab.enabled"),
+        euterpe_core::panel::switch(6, "eq.air.enabled"),
+    ];
 }
 
 #[cfg(test)]

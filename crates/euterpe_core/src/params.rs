@@ -161,7 +161,7 @@ impl ParamKind {
                 },
                 ParamValue::Float(v),
             ) => {
-                let v = v.clamp(min, max);
+                let v = clamp_to(v, min, max);
                 match taper {
                     Taper::Linear => (v - min) / (max - min),
                     Taper::Exponential => fastmath::log2(v / min) / fastmath::log2(max / min),
@@ -329,6 +329,15 @@ pub trait ParamField: Sized {
     fn assign(&mut self, kind: &ParamKind, value: ParamValue) -> Result<(), ParamError>;
 }
 
+/// `v` limited to `min..=max`, without `f32::clamp`'s panic for bounds out
+/// of order. That panic formats both bounds, which links about 15 KB of
+/// float formatting into firmware; here the bounds come from a schema at
+/// run time, so it can't be folded away.
+#[inline]
+fn clamp_to(v: f32, min: f32, max: f32) -> f32 {
+    v.max(min).min(max)
+}
+
 impl ParamField for f32 {
     fn default_for(kind: &ParamKind) -> Self {
         match *kind {
@@ -347,7 +356,7 @@ impl ParamField for f32 {
                 if !v.is_finite() {
                     return Err(ParamError::Invalid);
                 }
-                *self = v.clamp(min, max);
+                *self = clamp_to(v, min, max);
                 Ok(())
             }
             _ => Err(ParamError::TypeMismatch),
