@@ -14,6 +14,9 @@
 //! is within the device's budget, a fast blink (5 Hz) once any block went
 //! over it.
 //!
+//! With the `rtt` feature, the same numbers stream over RTT about once a
+//! second (`probe-rs run` prints them): `just probe-run <device>`.
+//!
 //! Parameters stay at their defaults for now; panel bindings come with the
 //! `Controls` part of the platform.
 //!
@@ -123,10 +126,9 @@ fn place_graph<P: Processor + Default>(init: Init) -> &'static mut Running<P> {
             (&raw mut (*r).buf).write([0.0; BLOCK]);
         }
     };
-    let fast = GRAPH.take().expect("run is called once");
+    let (fast, large) = arenas();
     // SAFETY: `build` initializes the whole `Running`.
     unsafe { fast.try_place_forever_by(build) }.unwrap_or_else(|_| {
-        let large = LARGE_GRAPH.take().expect("run is called once");
         // SAFETY: as above.
         unsafe { large.try_place_forever_by(build) }
             .ok()
@@ -155,12 +157,9 @@ impl Platform for Daisy {
         let mut cp = cortex_m::Peripherals::take().expect("run is called once");
         let dp = pac::Peripherals::take().expect("run is called once");
 
-        cp.SCB.enable_icache();
-        cp.SCB.enable_dcache(&mut cp.CPUID);
-        flush_denormals(&mut cp.FPU);
-        cp.DCB.enable_trace();
-        DWT::unlock();
-        cp.DWT.enable_cycle_counter();
+        init_core(&mut cp);
+        #[cfg(feature = "rtt")]
+        rtt_target::rtt_init_print!();
 
         let board = daisy::Board::take().expect("run is called once");
         let ccdr = daisy::board_freeze_clocks!(board, dp);
@@ -186,8 +185,25 @@ impl Platform for Daisy {
 
         // Blink: 1 Hz while within budget, 5 Hz once over it.
         let sys_hz = ccdr.clocks.sys_ck().to_Hz();
+        #[cfg(feature = "rtt")]
+        rtt_target::rprintln!(
+            "euterpe {} sys_hz={} budget={}",
+            D::NAME,
+            sys_hz,
+            D::BUDGET_CYCLES_PER_BLOCK
+        );
+        #[cfg(feature = "rtt")]
+        let mut toggles = 0_u32;
         loop {
             let s = stats();
+            // About once a second: the cycle accounting, over RTT.
+            #[cfg(feature = "rtt")]
+            {
+                toggles = toggles.wrapping_add(1);
+                if s.max > s.budget || toggles.is_multiple_of(2) {
+                    report(&s);
+                }
+            }
             let half_period = if s.max > s.budget {
                 sys_hz / 10
             } else {
@@ -199,6 +215,50 @@ impl Platform for Daisy {
             cortex_m::asm::delay(half_period);
         }
     }
+}
+
+/// One line of cycle accounting over RTT: `stats blocks=.. last=.. max=..
+/// budget=.. max_pct=..`.
+#[cfg(feature = "rtt")]
+fn report(s: &Stats) {
+    let pct = u64::from(s.max) * 100 / u64::from(s.budget.max(1));
+    rtt_target::rprintln!(
+        "stats blocks={} last={} max={} budget={} max_pct={}",
+        s.blocks,
+        s.last,
+        s.max,
+        s.budget,
+        pct
+    );
+}
+
+/// Core setup shared by every Daisy firmware: instruction and data caches
+/// on, denormals flushed to zero (thread mode and every handler), and the
+/// DWT cycle counter running.
+pub fn init_core(cp: &mut cortex_m::Peripherals) {
+    cp.SCB.enable_icache();
+    cp.SCB.enable_dcache(&mut cp.CPUID);
+    flush_denormals(&mut cp.FPU);
+    cp.DCB.enable_trace();
+    DWT::unlock();
+    cp.DWT.enable_cycle_counter();
+}
+
+/// Both graph arenas: DTCM, then AXI SRAM. The first call only, so a
+/// firmware that benches devices can use the same memory `run` would.
+///
+/// # Panics
+///
+/// If called twice, or after [`Daisy::run`].
+#[must_use]
+pub fn arenas() -> (
+    ArenaRef<GRAPH_ARENA_BYTES>,
+    ArenaRef<LARGE_GRAPH_ARENA_BYTES>,
+) {
+    (
+        GRAPH.take().expect("the arenas are taken once"),
+        LARGE_GRAPH.take().expect("the arenas are taken once"),
+    )
 }
 
 /// Set FZ (flush-to-zero) in FPSCR for thread mode, and in FPDSCR, the value

@@ -89,16 +89,21 @@ pub fn bench_overhead(probe: &mut impl Probe, sink: &mut impl Sink) {
 }
 
 /// Run every scenario for device `D`, building its graph in `arena` the
-/// way the embedded platforms do.
+/// way the embedded platforms do. Returns false, having run nothing, if the
+/// graph doesn't fit the arena.
 pub fn bench_device<D: Device, const N: usize>(
     arena: &mut ArenaRef<N>,
     probe: &mut impl Probe,
     sink: &mut impl Sink,
-) {
+) -> bool {
+    if !ArenaRef::<N>::fits::<Hot<D::Graph>>() {
+        return false;
+    }
     for scenario in Scenario::ALL {
         let total = run::<D::Graph, N>(arena, D::GRAPH_INIT, scenario, probe);
         sink.scenario(D::NAME, scenario.name(), BLOCKS, total);
     }
+    true
 }
 
 /// The measured call, kept out of line.
@@ -126,7 +131,8 @@ fn run<P: Processor + Default, const N: usize>(
     scenario: Scenario,
     probe: &mut impl Probe,
 ) -> Option<u64> {
-    let mut processor = arena.place_with::<Hot<P>>(init);
+    // `bench_device` checked that it fits.
+    let mut processor = arena.try_place_with::<Hot<P>>(init)?;
     processor.0.prepare(&Ctx::new(SAMPLE_RATE));
     processor.0.reset();
     let mut params = P::Params::default();
@@ -213,7 +219,11 @@ mod tests {
         static ARENA: euterpe_core::place::Arena<64> = euterpe_core::place::Arena::new();
         let mut probe = Counting::default();
         let mut sink = Collect::default();
-        bench_device::<Dev, 64>(&mut ARENA.take().unwrap(), &mut probe, &mut sink);
+        assert!(bench_device::<Dev, 64>(
+            &mut ARENA.take().unwrap(),
+            &mut probe,
+            &mut sink
+        ));
         let got: Vec<_> = sink.0.iter().map(|r| (r.1.as_str(), r.3)).collect();
         let blocks = Some(u64::from(BLOCKS));
         assert_eq!(got, [("static", blocks), ("automated", blocks)]);

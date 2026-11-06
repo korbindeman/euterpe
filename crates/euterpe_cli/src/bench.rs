@@ -52,6 +52,9 @@ BENCH OPTIONS:
     --tolerance <pct>     Allowed growth over the baseline [default: 0]
     --write-baseline <file>
                           Write the results as the new baseline.
+    --board-log <file>    RTT output of `euterpe_bench_daisy` (`just
+                          board-bench`): add measured board cycles per
+                          block, and judge the budget by them.
 ";
 
 pub struct Options {
@@ -59,6 +62,7 @@ pub struct Options {
     baseline: Option<PathBuf>,
     tolerance_pct: f64,
     write_baseline: Option<PathBuf>,
+    board_log: Option<PathBuf>,
 }
 
 impl Options {
@@ -68,6 +72,7 @@ impl Options {
             baseline: None,
             tolerance_pct: 0.0,
             write_baseline: None,
+            board_log: None,
         };
         let mut it = args.iter();
         while let Some(arg) = it.next() {
@@ -79,6 +84,7 @@ impl Options {
             match arg.as_str() {
                 "--baseline" => opts.baseline = Some(value()?.into()),
                 "--write-baseline" => opts.write_baseline = Some(value()?.into()),
+                "--board-log" => opts.board_log = Some(value()?.into()),
                 "--tolerance" => {
                     let v = value()?;
                     opts.tolerance_pct = v
@@ -90,7 +96,7 @@ impl Options {
                 }
                 flag if flag.starts_with("--") => {
                     return Err(format!(
-                        "unknown option `{flag}`; valid: --baseline, --tolerance, --write-baseline"
+                        "unknown option `{flag}`; valid: --baseline, --tolerance, --write-baseline, --board-log"
                     ));
                 }
                 device => {
@@ -142,10 +148,7 @@ pub fn run(opts: &Options) -> Result<(Json, bool), String> {
     )?);
 
     let wanted = |d: &str| opts.devices.is_empty() || opts.devices.iter().any(|w| w == d);
-    let baseline = match &opts.baseline {
-        Some(path) => Some(read_baseline(path)?),
-        None => None,
-    };
+    let (baseline, board) = comparisons(opts)?;
 
     let mut pass = true;
     let mut devices = Vec::new();
@@ -157,9 +160,9 @@ pub fn run(opts: &Options) -> Result<(Json, bool), String> {
         let mut scenarios = Vec::new();
         let mut worst: f64 = 0.0;
         for m in measurements.iter().filter(|m| m.device == *name) {
-            let cycles = m.insns_per_block * CYCLES_PER_INSN;
+            let (fields, regressed, cycles) =
+                scenario_report(m, budget, baseline.as_ref(), board.as_ref(), opts);
             worst = worst.max(cycles);
-            let (fields, regressed) = scenario_report(m, budget, baseline.as_ref(), opts);
             pass &= !regressed;
             scenarios.push(fields);
         }
@@ -213,7 +216,11 @@ pub fn run(opts: &Options) -> Result<(Json, bool), String> {
         ),
         (
             "cycle_estimate",
-            Json::str("1 cycle per instruction: not calibrated against the board yet"),
+            Json::str(if opts.board_log.is_some() {
+                "budget judged by board_cycles_per_block (DWT on the Daisy Seed)"
+            } else {
+                "1 cycle per instruction: not calibrated against the board yet"
+            }),
         ),
         ("blocks_per_scenario", Json::num(euterpe_bench::BLOCKS)),
         ("stack_limit_bytes", Json::num(STACK_LIMIT_BYTES as f64)),
@@ -230,14 +237,34 @@ pub fn run(opts: &Options) -> Result<(Json, bool), String> {
     Ok((report, pass))
 }
 
-/// One scenario's JSON, and whether it regressed against the baseline.
+/// The baseline and the board's cycles to compare with, if asked for.
+fn comparisons(opts: &Options) -> Result<(Option<Baseline>, Option<Baseline>), String> {
+    let baseline = match &opts.baseline {
+        Some(path) => Some(read_baseline(path)?),
+        None => None,
+    };
+    let board = match &opts.board_log {
+        Some(path) => Some(parse_board_log(
+            &fs::read_to_string(path).map_err(|e| format!("reading {}: {e}", path.display()))?,
+        )?),
+        None => None,
+    };
+    Ok((baseline, board))
+}
+
+/// One scenario's JSON, whether it regressed against the baseline, and its
+/// cycles per block: measured on the board if there is a board log, else
+/// estimated.
 fn scenario_report(
     m: &Measurement,
     budget: u32,
     baseline: Option<&Baseline>,
+    board: Option<&Baseline>,
     opts: &Options,
-) -> (Json, bool) {
-    let cycles = m.insns_per_block * CYCLES_PER_INSN;
+) -> (Json, bool, f64) {
+    let estimated = m.insns_per_block * CYCLES_PER_INSN;
+    let measured = board.and_then(|b| b.get(&(m.device.clone(), m.scenario.clone())).copied());
+    let cycles = measured.unwrap_or(estimated);
     let mut regressed = false;
     let mut fields = vec![
         ("scenario", Json::str(&m.scenario)),
@@ -246,7 +273,7 @@ fn scenario_report(
             "insns_per_sample",
             Json::num(round1(m.insns_per_block / BLOCK as f64)),
         ),
-        ("est_cycles_per_block", Json::num(cycles.round())),
+        ("est_cycles_per_block", Json::num(estimated.round())),
         (
             "budget_pct",
             Json::num(round1(100.0 * cycles / f64::from(budget))),
@@ -264,7 +291,60 @@ fn scenario_report(
             None => fields.push(("baseline_insns_per_block", Json::Null)),
         }
     }
-    (Json::Obj(fields), regressed)
+    if board.is_some() {
+        fields.push((
+            "board_cycles_per_block",
+            measured.map_or(Json::Null, |c| Json::num(round1(c))),
+        ));
+        fields.push((
+            "cycles_per_insn",
+            measured.map_or(Json::Null, |c| {
+                Json::num((c / m.insns_per_block * 1000.0).round() / 1000.0)
+            }),
+        ));
+    }
+    (Json::Obj(fields), regressed, cycles)
+}
+
+/// The board bench's `board <device> <scenario> <blocks> <cycles>` lines,
+/// as cycles per block with the probe overhead (the `overhead empty` line)
+/// removed.
+fn parse_board_log(log: &str) -> Result<Baseline, String> {
+    let mut raw = Vec::new();
+    for line in log.lines() {
+        let Some(rest) = line.trim().strip_prefix("board ") else {
+            continue;
+        };
+        let p: Vec<&str> = rest.split_whitespace().collect();
+        let [device, scenario, blocks, cycles] = p[..] else {
+            continue;
+        };
+        let (Ok(blocks), Ok(cycles)) = (blocks.parse::<u32>(), cycles.parse::<u64>()) else {
+            return Err(format!("board log: bad line `{line}`"));
+        };
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "cycle totals are far below 2^52"
+        )]
+        raw.push((
+            device.to_string(),
+            scenario.to_string(),
+            f64::from(blocks.max(1)),
+            cycles as f64,
+        ));
+    }
+    let overhead = raw
+        .iter()
+        .find(|r| r.0 == "overhead")
+        .map(|r| r.3 / r.2)
+        .ok_or(
+            "board log has no `board overhead empty` line; is it the euterpe_bench_daisy output?",
+        )?;
+    Ok(raw
+        .into_iter()
+        .filter(|r| r.0 != "overhead")
+        .map(|(d, s, blocks, total)| ((d, s), (total / blocks - overhead).max(0.0)))
+        .collect())
 }
 
 /// Where the Daisy puts a graph of `bytes`: DTCM if it fits, else AXI SRAM,
@@ -824,6 +904,22 @@ impl HotPath {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[expect(clippy::float_cmp, reason = "exact by construction")]
+    fn board_log_removes_probe_overhead() {
+        let log = "board start sys_hz=480000000\n\
+                   board overhead empty 64 640\n\
+                   board demo.gain static 64 10240\n\
+                   board demo.gain automated 64 12800\n\
+                   stats blocks=1\n\
+                   board done\n";
+        let b = parse_board_log(log).unwrap();
+        assert_eq!(b[&("demo.gain".into(), "static".into())], 150.0);
+        assert_eq!(b[&("demo.gain".into(), "automated".into())], 190.0);
+        assert_eq!(b.len(), 2);
+        assert!(parse_board_log("board demo.gain static 64 1\n").is_err());
+    }
 
     const DISASM: &str = "
 00001000 <<euterpe_bench::Hot<demo::Fast>>::process>:

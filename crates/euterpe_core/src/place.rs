@@ -162,6 +162,17 @@ impl<const BYTES: usize> ArenaRef<BYTES> {
         unsafe { self.build_unchecked(|p| init.build(p)) }
     }
 
+    /// Like [`place_with`](Self::place_with), but checks the size at run
+    /// time (a constant, so it folds away): `None` if `T` doesn't fit. For
+    /// code generic over arenas of different sizes.
+    pub fn try_place_with<T: Default>(&mut self, init: Init) -> Option<Placed<'_, T>> {
+        if !Self::fits::<T>() {
+            return None;
+        }
+        // SAFETY: it fits, and `Init::build` initializes the whole value.
+        Some(unsafe { self.build_unchecked(|p| init.build(p)) })
+    }
+
     /// Whether a `T` fits: [`place`](Self::place) compiles for it.
     #[must_use]
     pub const fn fits<T>() -> bool {

@@ -19,3 +19,7 @@ euterpe_daisy = { path = "../../crates/euterpe_daisy" }
 euterpe_registry = { path = "../../crates/euterpe_registry" }
 cortex-m-rt = "0.7"
 panic-halt = "0.2.0"
+
+[features]
+# Stream cycle accounting over RTT: `just probe-run <device>`.
+rtt = ["euterpe_daisy/rtt"]

@@ -18,6 +18,7 @@ members = [
     "crates/euterpe_registry",
     "crates/euterpe_desktop",
     "crates/euterpe_bench_qemu",
+    "crates/euterpe_bench_daisy",
     "crates/euterpe_daisy",
     "devices/demo_daisy",
     "crates/euterpe_fixtures",

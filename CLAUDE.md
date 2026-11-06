@@ -28,7 +28,7 @@ just clippy
 just test
 ```
 
-`cargo check --workspace` on the host fails by design: the firmware crates (`preamp_daisy`, `daisy_runtime`, `euterpe_daisy`, `demo_daisy`, `euterpe_bench_qemu`) only build for `thumbv7em-none-eabihf`. The justfile keeps the lists. The Daisy target builds with `target-cpu=cortex-m7` (`.cargo/config.toml`), which gives hardware f64 and the M7 instruction schedule.
+`cargo check --workspace` on the host fails by design: the firmware crates (`preamp_daisy`, `daisy_runtime`, `euterpe_daisy`, `demo_daisy`, `euterpe_bench_qemu`, `euterpe_bench_daisy`) only build for `thumbv7em-none-eabihf`. The justfile keeps the lists. The Daisy target builds with `target-cpu=cortex-m7` (`.cargo/config.toml`), which gives hardware f64 and the M7 instruction schedule.
 
 ## Euterpe (toolkit in progress)
 
@@ -44,7 +44,8 @@ This repo is becoming **Euterpe**, a toolkit for building audio hardware. The de
 - **`devices/pedals`**: `pedal.fuzz` (biased tanh at 4x, DC blocker, tone), `pedal.tremolo`, `pedal.delay` (1 s feedback delay; its graph lives in AXI SRAM and uses a zeroed `GRAPH_INIT`), `pedal.eq` (shelves and a mid bell, tested against the RBJ prototypes).
 - **`crates/euterpe_bench`** (`no_std`): the bench harness (`static` and `automated` scenarios), shared by every bench target.
 - **`crates/euterpe_bench_qemu`**: bench firmware for QEMU's `mps2-an500` (a Cortex-M7). Run through `euterpe bench`, never directly.
-- **`crates/euterpe_daisy`**: the Daisy Seed `Platform`. Runs a device on the codec, measures every block with the DWT cycle counter, blinks the LED fast if a block goes over budget.
+- **`crates/euterpe_daisy`**: the Daisy Seed `Platform`. Runs a device on the codec, measures every block with the DWT cycle counter, blinks the LED fast if a block goes over budget. With the `rtt` feature it streams `stats blocks=.. last=.. max=.. budget=..` over RTT (`just probe-run <device>`, needs a debug probe and `probe-rs`).
+- **`crates/euterpe_bench_daisy`**: bench firmware for the Seed: the QEMU bench's scenarios in DWT cycles, over RTT. `just board-bench` runs it and passes the log to `euterpe bench --board-log`, which adds `board_cycles_per_block` and `cycles_per_insn` and judges budgets by the board. Not run on hardware yet. It links every device, so watch its flash (102 KB of 128 KB now).
 - **`devices/demo_daisy`**: firmware running any registered device on the Seed, chosen at build time by `EUTERPE_DEVICE` (default `demo.drive`, a typo is a compile error): `just flash-device demo.rig`.
 - **`crates/euterpe_desktop`**: the desktop platform, `euterpe-desktop` (`just play demo.drive`). Plays any registered device through an audio interface (a Volt if connected), with a panel generated from the schema, test-signal and WAV-loop sources, bypass, meters and host load.
 

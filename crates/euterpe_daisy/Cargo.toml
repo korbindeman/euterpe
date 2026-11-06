@@ -13,3 +13,8 @@ daisy = { version = "0.11.0", features = ["seed_1_2"] }
 cortex-m = "0.7"
 cortex-m-rt = { version = "0.7", features = ["device"] }
 stm32h7xx-hal = { version = "0.16", features = ["stm32h750v", "rt", "revision_v"] }
+rtt-target = { version = "0.6", optional = true }
+
+[features]
+# Stream the cycle accounting over RTT (needs a debug probe).
+rtt = ["dep:rtt-target"]

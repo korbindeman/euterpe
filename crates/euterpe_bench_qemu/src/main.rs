@@ -50,7 +50,9 @@ fn bench_out_of_line<D: Device>(
     probe: &mut Markers,
     sink: &mut Semihosting,
 ) {
-    bench_device::<D, LARGE_GRAPH_ARENA_BYTES>(arena, probe, sink);
+    // The arena holds any graph the Daisy can (the Daisy build checks), so
+    // a graph that doesn't fit shows up as missing results.
+    let _ = bench_device::<D, LARGE_GRAPH_ARENA_BYTES>(arena, probe, sink);
 }
 
 /// Stack high-water measurement by painting.

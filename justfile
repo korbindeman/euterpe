@@ -9,11 +9,14 @@ check-format:
 format:
     cargo fmt --all
 
+# The Daisy Seed's MCU, for probe-rs.
+chip := "STM32H750IBKx"
+
 # Crates that only build for the Daisy target, and the no_std crates that
 # also get checked for it.
-firmware_crates := "-p preamp_daisy -p daisy_runtime -p euterpe_daisy -p demo_daisy -p euterpe_bench_qemu"
+firmware_crates := "-p preamp_daisy -p daisy_runtime -p euterpe_daisy -p demo_daisy -p euterpe_bench_qemu -p euterpe_bench_daisy"
 no_std_crates := "-p euterpe_core -p euterpe_dsp -p euterpe_demo -p euterpe_pedals -p euterpe_registry -p euterpe_bench -p dsp -p preamp"
-host_excludes := "--exclude preamp_daisy --exclude daisy_runtime --exclude euterpe_daisy --exclude demo_daisy --exclude euterpe_bench_qemu"
+host_excludes := "--exclude preamp_daisy --exclude daisy_runtime --exclude euterpe_daisy --exclude demo_daisy --exclude euterpe_bench_qemu --exclude euterpe_bench_daisy"
 
 # Host crates on the host, firmware and no_std crates on the Daisy target.
 clippy: clippy-host clippy-firmware
@@ -49,6 +52,17 @@ flash bin=binary:
 # Flash any registered device to the Daisy, e.g. `just flash-device demo.rig`.
 flash-device device:
     EUTERPE_DEVICE={{device}} just flash demo_daisy
+
+# Run a device on the Daisy via a debug probe, with cycle stats over RTT.
+probe-run device="demo.drive":
+    EUTERPE_DEVICE={{device}} cargo build --release -p demo_daisy --features rtt --target {{target}}
+    probe-rs run --chip {{chip}} target/{{target}}/release/demo_daisy
+
+# Bench every device on the Daisy via a debug probe, next to QEMU's counts.
+board-bench:
+    cargo build --release -p euterpe_bench_daisy --target {{target}}
+    probe-rs run --chip {{chip}} target/{{target}}/release/euterpe_bench_daisy | tee target/board-bench.log
+    just bench --board-log target/board-bench.log
 
 # Instruction counts per block on an emulated Cortex-M7, checked against the
 # baseline. Needs qemu-system-arm, cc + glib headers, and llvm-tools.
