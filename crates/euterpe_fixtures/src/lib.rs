@@ -145,7 +145,7 @@ pub struct CutReport {
     pub lag: Option<isize>,
     /// Output polarity was flipped to match the DI.
     pub inverted: bool,
-    /// Normalized correlation at the chosen lag, 0..1.
+    /// Normalized correlation at the chosen lag, 0..1 (NaN for a pinned lag).
     pub correlation: Option<f32>,
 }
 
@@ -226,6 +226,11 @@ pub fn cut(excerpt: &Excerpt) -> Result<CutReport, Error> {
             let ms = |v: f32| (v * SAMPLE_RATE as f32 / 1000.0) as usize;
             let a = match how {
                 Align::Window { max_lag_ms } => align::align(&di_cut, &out, start, ms(max_lag_ms)),
+                Align::Fixed { lag_ms, inverted } => align::Alignment {
+                    lag: (lag_ms * SAMPLE_RATE as f32 / 1000.0).round() as isize,
+                    inverted,
+                    correlation: f32::NAN,
+                },
                 Align::Attack { max_lag_ms } => {
                     // 20 ms before the DI's attack to 100 ms after it.
                     let at = align::onset(&di_cut, ATTACK_ONSET).saturating_sub(ms(20.0));

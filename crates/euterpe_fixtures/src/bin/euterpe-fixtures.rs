@@ -193,7 +193,7 @@ fn cmd_excerpt(args: &[String]) -> Result<String, String> {
             r.start_s,
             opt(r.lag.map(|v| v.to_string())),
             r.inverted,
-            opt(r.correlation.map(|v| format!("{v:.3}"))),
+            opt(r.correlation.filter(|v| v.is_finite()).map(|v| format!("{v:.3}"))),
         ));
     }
     Ok(format!("[{}]", rows.join(",")))

@@ -46,8 +46,10 @@ different hardware from anything we model, the amp ones include a mic and
 room, and the alignment is by cross-correlation (lag, polarity and
 correlation are printed by `excerpt`). Single-note EGFxSet pairs are aligned
 on the pick attack only, within ±10 ms: over a whole sustained note the
-correlation locks onto the wrong cycle. A test checks every pair's output
-onset is within 10 ms of its DI.
+correlation locks onto the wrong cycle. The RAT pair's lag is pinned by
+hand (-3 ms), because at that gain correlation gives a different lag and
+polarity for every window size. A test checks every pair's output onset is
+within 5 ms of its DI.
 
 ## Regenerating
 

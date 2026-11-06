@@ -216,6 +216,9 @@ pub enum Align {
     /// correlation locks onto a whole number of periods away (it chose
     /// +60 ms on a Tube Screamer note whose true lag is ~0).
     Attack { max_lag_ms: f32 },
+    /// A hand-pinned lag, for pairs where correlation doesn't converge.
+    /// `lag_ms` is the output delay relative to the DI (negative: early).
+    Fixed { lag_ms: f32, inverted: bool },
 }
 
 /// A short clip committed to `fixtures/committed/`.
@@ -309,7 +312,15 @@ pub const EXCERPTS: &[Excerpt] = &[
             di: src("Clean.zip", "Clean/Neck/6-5.wav"),
             out: src("RAT.zip", "RAT/Neck/6-5.wav"),
             hardware: "Pro Co RAT2: distortion 1.0, filter 0.5, volume 1.0",
-            align: Align::Attack { max_lag_ms: 10.0 },
+            // Correlation doesn't converge on this high-gain note: the best lag
+            // and even the polarity change with the window (50/100/300 ms
+            // gave +10, -7.8 and +8.9 ms). The output is already sounding at
+            // the file's first sample while the DI's attack lands at 3 ms, so
+            // pin it by onset. Known to a few ms at best.
+            align: Align::Fixed {
+                lag_ms: -3.0,
+                inverted: false,
+            },
         },
         start: Start::At(0.0),
         len_s: 3.0,
