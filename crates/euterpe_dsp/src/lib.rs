@@ -7,8 +7,11 @@
 //!   which run a processor at 2, 4 or 8 times the device rate through
 //!   polyphase half-band filters.
 //! - [`convolve`]: [`Convolver`], zero-latency partitioned convolution with
-//!   an impulse response (cabinets).
-//! - [`fft`]: the 64-point real FFT the convolver runs on.
+//!   an impulse response.
+//! - [`split_convolve`]: [`SplitConvolver`], the same for long IRs
+//!   (cabinets) at about 70% of the cost: short partitions for the head,
+//!   512-point FFTs spread over 8 blocks for the tail.
+//! - [`fft`]: the 64- and 512-point real FFTs they run on.
 //! - [`filter`]: [`Svf`] (every second-order shape, stable under
 //!   modulation), [`OnePole`] and [`DcBlocker`].
 //! - [`delay`]: [`DelayLine`], with integer, linear and cubic taps.
@@ -28,6 +31,7 @@ pub mod fft;
 pub mod filter;
 pub mod lfo;
 pub mod oversample;
+pub mod split_convolve;
 
 pub use convolve::Convolver;
 pub use delay::DelayLine;
@@ -35,3 +39,4 @@ pub use dynamics::{Ballistics, Follower, SoftKnee, time_constant};
 pub use filter::{DcBlocker, OnePole, Svf, SvfCoeffs, dc_blocker_coeff, one_pole_coeff};
 pub use lfo::{Phasor, Shape};
 pub use oversample::{Oversample2x, Oversampled2, Oversampled4, Oversampled8};
+pub use split_convolve::SplitConvolver;

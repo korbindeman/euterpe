@@ -6,7 +6,7 @@
 //!   oversampled, so it aliases at high drive.
 //! - `demo.drive4x`: the same [`Drive`], run at 4x through
 //!   [`euterpe_dsp::Oversampled4`]. Wrapping is the whole change.
-//! - `demo.cab`: a 2048-tap cabinet IR through [`euterpe_dsp::Convolver`],
+//! - `demo.cab`: a 2048-tap cabinet IR through [`euterpe_dsp::SplitConvolver`],
 //!   with an output level.
 //! - `demo.rig`: `demo.drive4x` into `demo.cab`, a `#[derive(Chain)]`.
 
@@ -145,11 +145,11 @@ pub struct CabParams {
 
 /// A cabinet: convolution with [`DELUXE_REVERB`], then a smoothed level.
 ///
-/// `Default` only zeroes the 34 KB convolver, so it builds in place; the IR
+/// `Default` only zeroes the 38 KB convolver, so it builds in place; the IR
 /// is loaded in `prepare`, as assets should be.
 #[derive(Default)]
 pub struct Cab {
-    ir: euterpe_dsp::Convolver<64>,
+    ir: euterpe_dsp::SplitConvolver<6>,
     loaded: bool,
     level: Smoother,
 }
@@ -190,6 +190,11 @@ impl Device for CabDevice {
     const DESCRIPTION: &'static str =
         "Deluxe Reverb cabinet IR (2048 taps) with output level. Zero latency.";
     type Graph = Cab;
+    // SAFETY: the convolver's spectra and buffers, the smoother and the
+    // `loaded` flag all default to zero; `prepare` loads the IR. Built with
+    // `Default`, the 55 KB graph went through the stack. `check_init`
+    // tests it.
+    const GRAPH_INIT: euterpe_core::place::Init = unsafe { euterpe_core::place::Init::zeroed() };
 }
 
 // ---------------------------------------------------------------------------
@@ -212,6 +217,9 @@ impl Device for RigDevice {
     const NAME: &'static str = "demo.rig";
     const DESCRIPTION: &'static str = "demo.drive4x into demo.cab, composed with #[derive(Chain)].";
     type Graph = Rig;
+    // SAFETY: both stages default to zero (the cab as above; the drive's
+    // oversampler rings and smoother); `check_init` tests it.
+    const GRAPH_INIT: euterpe_core::place::Init = unsafe { euterpe_core::place::Init::zeroed() };
 }
 
 #[cfg(test)]

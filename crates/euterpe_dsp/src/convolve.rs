@@ -16,18 +16,23 @@ const _: () = assert!(N == 2 * BLOCK);
 
 /// Convolution with an IR of up to `P * 32` taps.
 ///
-/// Memory is two spectra per partition, `2 * P * 33 * 8` bytes: 34 KB for
-/// `P = 64` (2048 taps, 43 ms at 48 kHz).
+/// Memory is three spectra per partition, `3 * P * 33 * 8` bytes: 51 KB
+/// for `P = 64` (2048 taps, 43 ms at 48 kHz). For long IRs,
+/// [`SplitConvolver`](crate::SplitConvolver) is cheaper.
 ///
-/// Both spectra are stored per bin (`[bin][partition]`), so the hot loop
+/// The spectra are stored per bin (`[bin][partition]`), so the hot loop
 /// sums one bin over all partitions with its accumulator in registers and
-/// both operands contiguous.
+/// both operands contiguous. The input ring is mirrored (each spectrum is
+/// written at `pos` and `pos + P`), so the `P` most recent inputs, oldest
+/// first, are always one contiguous run: one multiply-add loop of a
+/// compile-time length per bin.
 pub struct Convolver<const P: usize> {
     /// Partition spectra, scaled by `1/32` to undo [`fft::irfft_x32`], in
     /// reverse partition order: `ir[k][P - 1 - p]` is bin `k` of partition `p`.
     ir: [[Complex; P]; BINS],
-    /// Input spectra, a ring over blocks with the newest at `pos`.
-    fdl: [[Complex; P]; BINS],
+    /// Input spectra, a mirrored ring over blocks with the newest at `pos`
+    /// and again at `pos + P` (see [`ring_window`]).
+    fdl: [[[Complex; P]; 2]; BINS],
     pos: usize,
     /// The previous input block, then the current one.
     window: [f32; N],
@@ -38,7 +43,7 @@ impl<const P: usize> Default for Convolver<P> {
         const { assert!(P >= 1) };
         Self {
             ir: [[Complex::ZERO; P]; BINS],
-            fdl: [[Complex::ZERO; P]; BINS],
+            fdl: [[[Complex::ZERO; P]; 2]; BINS],
             pos: 0,
             window: [0.0; N],
         }
@@ -47,24 +52,44 @@ impl<const P: usize> Default for Convolver<P> {
 
 /// The ring slot after `pos`, in `0..p`.
 #[inline(always)]
-const fn next_pos(pos: usize, p: usize) -> usize {
+pub(crate) const fn next_pos(pos: usize, p: usize) -> usize {
     if pos + 1 < p { pos + 1 } else { 0 }
 }
 
-/// Where the ring and the reversed IR split into the two forward runs that
-/// pair partition `k` with the input from `k` blocks ago: `fdl[..len]` with
-/// `ir[split..]`, then `fdl[len..]` with `ir[..split]`.
+/// Write `x` as the newest entry of a mirrored ring of `P` at `pos`, and
+/// return the window of all `P` entries, oldest first, newest last. With the
+/// IR stored reversed (partition `P - 1 - j` at `j`), window entry `j`
+/// pairs with exactly the partition of its age.
 #[inline(always)]
-const fn runs(pos: usize, p: usize) -> (usize, usize) {
-    (pos + 1, p - 1 - pos)
+pub(crate) fn ring_push<const P: usize>(
+    ring: &mut [[Complex; P]; 2],
+    pos: usize,
+    x: Complex,
+) -> Option<&[Complex; P]> {
+    let flat = ring.as_flattened_mut();
+    if let Some(s) = flat.get_mut(pos) {
+        *s = x;
+    }
+    if let Some(s) = flat.get_mut(pos + P) {
+        *s = x;
+    }
+    let (start, end) = ring_window(pos, P);
+    flat.get(start..end).and_then(|w| w.try_into().ok())
 }
 
-/// `sum a[i] * b[i]` over complex slices.
+/// The mirrored ring's window, `[pos + 1, pos + 1 + p)`, for the newest
+/// entry at `pos`.
+#[inline(always)]
+pub(crate) const fn ring_window(pos: usize, p: usize) -> (usize, usize) {
+    (pos + 1, pos + 1 + p)
+}
+
+/// `sum a[i] * b[i]` over complex arrays.
 ///
 /// Each product term goes straight into its accumulator (`vmla`/`vmls` on
 /// the M7), rather than forming the complex product and then adding it.
 #[inline(always)]
-fn dot(a: &[Complex], b: &[Complex]) -> Complex {
+pub(crate) fn dot<const P: usize>(a: &[Complex; P], b: &[Complex; P]) -> Complex {
     let (mut re, mut im) = (0.0, 0.0);
     for (&x, &h) in a.iter().zip(b) {
         re += x.re * h.re;
@@ -108,9 +133,14 @@ impl<const P: usize> Convolver<P> {
     }
 
     pub fn reset(&mut self) {
-        self.fdl = [[Complex::ZERO; P]; BINS];
+        // `fill` zeroes in place; assigning an array literal can build it on
+        // the stack first.
+        self.fdl
+            .as_flattened_mut()
+            .as_flattened_mut()
+            .fill(Complex::ZERO);
         self.pos = 0;
-        self.window = [0.0; N];
+        self.window.fill(0.0);
     }
 
     /// Convolve one block in place.
@@ -128,25 +158,17 @@ impl<const P: usize> Convolver<P> {
         let pos = next_pos(self.pos, P);
         self.pos = pos;
 
-        // Partition p meets the input from p blocks ago, `fdl[(pos - p) mod
-        // P]`. With the IR stored reversed, that is two forward runs:
-        // fdl[..=pos] with ir[P-1-pos..], and fdl[pos+1..] with ir[..P-1-pos].
-        let (new_len, split) = runs(pos, P);
+        // Partition p meets the input from p blocks ago: the ring's window,
+        // oldest first, against the reversed IR.
         let mut acc = [Complex::ZERO; BINS];
-        for ((a, (row, h)), x) in acc
+        for ((a, (ring, h)), x) in acc
             .iter_mut()
             .zip(self.fdl.iter_mut().zip(&self.ir))
             .zip(spectrum)
         {
-            if let Some(slot) = row.get_mut(pos) {
-                *slot = x;
+            if let Some(window) = ring_push(ring, pos, x) {
+                *a = dot(window, h);
             }
-            let (Some((f_new, f_old)), Some((h_old, h_new))) =
-                (row.split_at_checked(new_len), h.split_at_checked(split))
-            else {
-                continue;
-            };
-            *a = dot(f_new, h_new) + dot(f_old, h_old);
         }
 
         // Overlap-save: the second half is the linear convolution.
@@ -190,39 +212,43 @@ mod proofs {
         assert!(next_pos(pos, p) < p);
     }
 
-    /// For every ring size up to 1024 and every position, both splits
-    /// exist (so `process` never takes its fallback), the paired runs have
-    /// equal lengths, and they cover the ring exactly once.
+    /// For every ring size up to 1024 and every position, both writes and
+    /// the whole window are inside the mirrored ring of `2 * p`, so
+    /// `ring_push` always returns the window.
     #[kani::proof]
-    fn runs_split_cleanly() {
+    fn ring_window_is_in_bounds() {
         let p: usize = kani::any();
         kani::assume((1..=1024).contains(&p));
         let pos: usize = kani::any();
         kani::assume(pos < p);
-        let (len, split) = runs(pos, p);
-        assert!(len <= p && split <= p);
-        assert!(len == p - split, "fdl[..len] pairs with ir[split..]");
-        assert!(p - len == split, "fdl[len..] pairs with ir[..split]");
+        let (start, end) = ring_window(pos, p);
+        assert!(pos + p < 2 * p, "the mirror write");
+        assert!(end - start == p && end <= 2 * p);
     }
 
-    /// Walking the two runs the way `process` does pairs ring slot `q` with
-    /// partition `(pos - q) mod P`: each partition meets the input from
-    /// exactly that many blocks ago. Checked for every slot of an 8-slot ring.
+    /// After any sequence of pushes into an 8-slot mirrored ring, window
+    /// entry `j` holds the input from `P - 1 - j` pushes ago: the oldest
+    /// first, the newest last, every one exactly once.
     #[kani::proof]
-    #[kani::unwind(10)]
-    fn runs_pair_each_partition_with_its_delay() {
+    #[kani::unwind(12)]
+    fn ring_window_holds_the_last_p_inputs_in_order() {
         const P: usize = 8;
-        let pos: usize = kani::any();
-        kani::assume(pos < P);
-        let (len, split) = runs(pos, P);
-        let mut seen = [false; P];
-        for q in 0..P {
-            // Index into the reversed IR that `process` multiplies slot q by.
-            let h = if q < len { split + q } else { q - len };
-            let partition = P - 1 - h;
-            assert!(partition == (pos + P - q) % P);
-            assert!(!seen[partition]);
-            seen[partition] = true;
+        let mut ring = [[Complex::ZERO; P]; 2];
+        let mut pos = 0;
+        let pushes: usize = kani::any();
+        kani::assume((P..=P + 2).contains(&pushes));
+        let mut last = None;
+        for n in 0..pushes {
+            pos = next_pos(pos, P);
+            #[expect(clippy::cast_precision_loss, reason = "n < 16")]
+            let x = Complex::new(n as f32, 0.0);
+            last = ring_push(&mut ring, pos, x).copied();
+        }
+        let window = last.expect("the window is always in bounds");
+        for (j, w) in window.iter().enumerate() {
+            #[expect(clippy::cast_precision_loss, reason = "small")]
+            let want = (pushes - P + j) as f32;
+            assert!(w.re == want);
         }
     }
 }

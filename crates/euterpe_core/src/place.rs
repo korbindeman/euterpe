@@ -298,10 +298,24 @@ impl Init {
             if self.zeroed {
                 dst.write_bytes(0, 1);
             } else {
-                dst.write(T::default());
+                write_default(dst);
             }
         }
     }
+}
+
+/// `dst.write(T::default())`, out of line. The default may be built in a
+/// stack temporary the size of `T`; kept inline, that frame would be
+/// reserved by every caller of [`Init::build`] even when it zeroes, and a
+/// zeroed 60 KB graph would still cost 120 KB of stack.
+///
+/// # Safety
+///
+/// `dst` is aligned and valid for writes of a `T`.
+#[inline(never)]
+unsafe fn write_default<T: Default>(dst: *mut T) {
+    // SAFETY: the caller's contract.
+    unsafe { dst.write(T::default()) }
 }
 
 /// A value living in an arena. Dropping it drops the value.

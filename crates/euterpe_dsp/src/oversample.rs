@@ -151,22 +151,43 @@ fn symmetric_dot<const N: usize>(taps: &[f32; N], w: &[f32; N]) -> f32 {
     acc
 }
 
+/// The `N` even taps of the half-band kernel with that many: [`STEEP`]
+/// (40), [`MEDIUM`] (14) or [`GENTLE`] (10). Another `N` is a compile error
+/// where it is used in a `const` block.
+///
+/// Picked from `N` rather than stored, so a filter holds no reference and
+/// an all-zero one is valid (a graph built by zeroing,
+/// `euterpe_core::place::Init::zeroed`).
+#[must_use]
+pub const fn even_taps<const N: usize>() -> &'static [f32; N] {
+    let t: &'static [f32] = match N {
+        40 => &STEEP,
+        14 => &MEDIUM,
+        10 => &GENTLE,
+        _ => panic!("no half-band kernel has this many even taps"),
+    };
+    assert!(t.len() == N);
+    // SAFETY: `t` has exactly `N` elements (just checked) and is 'static.
+    unsafe { &*t.as_ptr().cast::<[f32; N]>() }
+}
+
 /// Polyphase half-band interpolator: one input sample in, two out.
 ///
-/// `taps` are the `N` nonzero even taps of a `2N - 1` tap half-band filter.
-/// The delay is `N - 1` samples at the output rate.
-#[derive(Clone)]
+/// Filters with the `N` nonzero even taps of a `2N - 1` tap half-band
+/// kernel ([`even_taps`]). The delay is `N - 1` samples at the output rate.
+#[derive(Clone, Default)]
 pub struct Upsampler<const N: usize> {
-    taps: &'static [f32; N],
     hist: History,
 }
 
 impl<const N: usize> Upsampler<N> {
+    const TAPS: &'static [f32; N] = even_taps::<N>();
+
     #[must_use]
-    pub fn new(taps: &'static [f32; N]) -> Self {
+    pub fn new() -> Self {
         const { assert!(N.is_multiple_of(2) && N >= 2 && N <= CAP) };
+        let _ = Self::TAPS;
         Self {
-            taps,
             hist: History::default(),
         }
     }
@@ -183,7 +204,7 @@ impl<const N: usize> Upsampler<N> {
             self.hist.push(x);
             if let Some(w) = self.hist.window::<N>() {
                 // Zero-stuffing halves the energy; the 2 restores unity gain.
-                out[0] = 2.0 * symmetric_dot(self.taps, w);
+                out[0] = 2.0 * symmetric_dot(Self::TAPS, w);
                 // The other phase only meets the centre tap: 2 * 0.5 * x[n - m].
                 out[1] = w[N / 2];
             }
@@ -191,22 +212,24 @@ impl<const N: usize> Upsampler<N> {
     }
 }
 
-/// Polyphase half-band decimator: two input samples in, one out.
+/// Polyphase half-band decimator: two input samples in, one out, with the
+/// kernel [`even_taps`] picks for `N`.
 ///
 /// The delay is `N - 1` samples at the input rate.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Downsampler<const N: usize> {
-    taps: &'static [f32; N],
     even: History,
     odd: History,
 }
 
 impl<const N: usize> Downsampler<N> {
+    const TAPS: &'static [f32; N] = even_taps::<N>();
+
     #[must_use]
-    pub fn new(taps: &'static [f32; N]) -> Self {
+    pub fn new() -> Self {
         const { assert!(N.is_multiple_of(2) && N >= 2 && N <= CAP) };
+        let _ = Self::TAPS;
         Self {
-            taps,
             even: History::default(),
             odd: History::default(),
         }
@@ -225,7 +248,7 @@ impl<const N: usize> Downsampler<N> {
             self.even.push(e);
             if let Some(w) = self.even.window::<N>() {
                 // The odd phase meets only the centre tap, `m` pairs back.
-                *y = symmetric_dot(self.taps, w) + 0.5 * self.odd.lag(m);
+                *y = symmetric_dot(Self::TAPS, w) + 0.5 * self.odd.lag(m);
             }
             self.odd.push(o);
         }
@@ -248,29 +271,24 @@ pub struct Oversample2x<P, const N: usize> {
 }
 
 impl<P, const N: usize> Oversample2x<P, N> {
-    /// Wrap `inner`, filtering with the `N` even taps of a half-band filter.
-    pub fn new(inner: P, taps: &'static [f32; N]) -> Self {
+    /// Wrap `inner`, filtering with the half-band kernel of `N` even taps
+    /// ([`even_taps`]).
+    pub fn new(inner: P) -> Self {
         Self {
             inner,
-            up: Upsampler::new(taps),
-            down: Downsampler::new(taps),
+            up: Upsampler::new(),
+            down: Downsampler::new(),
             hi: [[0.0; BLOCK]; 2],
             pad: None,
         }
     }
 }
 
-macro_rules! default_stage {
-    ($($n:literal => $taps:ident),* $(,)?) => {$(
-        impl<P: Default> Default for Oversample2x<P, $n> {
-            fn default() -> Self {
-                Self::new(P::default(), &$taps)
-            }
-        }
-    )*};
+impl<P: Default, const N: usize> Default for Oversample2x<P, N> {
+    fn default() -> Self {
+        Self::new(P::default())
+    }
 }
-
-default_stage!(40 => STEEP, 14 => MEDIUM, 10 => GENTLE);
 
 impl<P: Processor, const N: usize> Oversample2x<P, N> {
     fn sync_pad(&mut self) {
@@ -397,7 +415,7 @@ mod tests {
             .map(|i| ((i * 37 % 101) as f32 / 50.0) - 1.0)
             .collect();
         let mut out = vec![[0.0; 2]; x.len()];
-        let mut up = Upsampler::new(&STEEP);
+        let mut up = Upsampler::<40>::new();
         up.process(&x[..77], &mut out[..77]);
         up.process(&x[77..], &mut out[77..]);
         for k in 0..2 * x.len() {
@@ -421,7 +439,7 @@ mod tests {
             .collect();
         let pairs: Vec<[f32; 2]> = v.as_chunks::<2>().0.to_vec();
         let mut out = vec![0.0; pairs.len()];
-        let mut down = Downsampler::new(&MEDIUM);
+        let mut down = Downsampler::<14>::new();
         down.process(&pairs[..31], &mut out[..31]);
         down.process(&pairs[31..], &mut out[31..]);
         for (n, &got) in out.iter().enumerate() {

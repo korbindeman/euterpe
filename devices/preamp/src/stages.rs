@@ -4,7 +4,7 @@
 
 use euterpe_core::{Block, Ctx, ParamKind, ParamSet, Params, Processor, Smoother, fastmath};
 use euterpe_dsp::{
-    Ballistics, Convolver, DcBlocker, DelayLine, Follower, Phasor, SoftKnee, Svf, SvfCoeffs,
+    Ballistics, DcBlocker, DelayLine, Follower, Phasor, SoftKnee, SplitConvolver, Svf, SvfCoeffs,
     dc_blocker_coeff, time_constant,
 };
 
@@ -563,11 +563,11 @@ pub struct CabParams {
     pub enabled: bool,
 }
 
-/// The Deluxe Reverb IR through a zero-latency [`Convolver`]. (The legacy
+/// The Deluxe Reverb IR through a zero-latency [`SplitConvolver`]. (The legacy
 /// `CabSim` added 256 samples of latency.)
 #[derive(Default)]
 pub struct Cab {
-    conv: Convolver<64>,
+    conv: SplitConvolver<6>,
     loaded: bool,
 }
 
